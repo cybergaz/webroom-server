@@ -1,0 +1,310 @@
+import Elysia, { t } from 'elysia'
+import { adminPlugin } from '../middleware/auth'
+import * as adminService from '../services/admin.service'
+import * as sessionService from '../services/session.service'
+
+export const adminRoute = new Elysia({ prefix: '/admin' })
+  .use(adminPlugin)
+
+  // ─── Host CRUD ───────────────────────────────────────────────────────────────
+
+  .get('/hosts', async ({ user }) => {
+    const hosts = await adminService.listHosts(user.userId)
+    return { hosts }
+  })
+
+  .post(
+    '/hosts',
+    async ({ body, user, set }) => {
+      try {
+        const host = await adminService.createHost(user.userId, body)
+        set.status = 201
+        return host
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      body: t.Object({
+        name: t.String({ minLength: 1 }),
+        phone: t.Optional(t.String({ minLength: 1 })),
+        email: t.Optional(t.String()),
+        password: t.String({ minLength: 6 }),
+      }),
+    },
+  )
+
+  .patch(
+    '/hosts/:hostId',
+    async ({ params, body, user, set }) => {
+      try {
+        return await adminService.updateHost(params.hostId, user.userId, body)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ hostId: t.String() }),
+      body: t.Object({
+        name: t.Optional(t.String({ minLength: 1 })),
+        email: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  .post(
+    '/hosts/:hostId/activate',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.activateHost(params.hostId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  .post(
+    '/hosts/:hostId/deactivate',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.deactivateHost(params.hostId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  .delete(
+    '/hosts/:hostId',
+    async ({ params, user, set }) => {
+      try {
+        await adminService.deleteHost(params.hostId, user.userId)
+        set.status = 204
+        return null
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  // ─── User management ────────────────────────────────────────────────────────
+
+  .get(
+    '/users/search',
+    async ({ query, set }) => {
+      try {
+        const user = await adminService.searchPendingUser(query.requestId)
+        if (!user) {
+          set.status = 404
+          return { error: 'No pending user found with this request ID' }
+        }
+        return { user }
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { query: t.Object({ requestId: t.String({ minLength: 1 }) }) },
+  )
+
+  .post(
+    '/users/:userId/approve',
+    async ({ params, body, user, set }) => {
+      try {
+        return await adminService.approveUser(params.userId, user.userId, body?.temporaryPassword)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ userId: t.String() }),
+      body: t.Optional(t.Object({ temporaryPassword: t.Optional(t.String()) })),
+    },
+  )
+
+  .post(
+    '/users/:userId/reject',
+    async ({ params, set }) => {
+      try {
+        return await adminService.rejectUser(params.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .post(
+    '/users/:userId/force-logout',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.forceLogoutUser(params.userId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .get('/users', async ({ user }) => {
+    const usersList = await adminService.listUsers(user.userId)
+    return { users: usersList }
+  })
+
+  .post(
+    '/users',
+    async ({ body, user, set }) => {
+      try {
+        const created = await adminService.createUser(user.userId, body)
+        set.status = 201
+        return created
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      body: t.Object({
+        name: t.String({ minLength: 1 }),
+        phone: t.Optional(t.String({ minLength: 1 })),
+        email: t.Optional(t.String()),
+        password: t.String({ minLength: 6 }),
+      }),
+    },
+  )
+
+  .patch(
+    '/users/:userId',
+    async ({ params, body, user, set }) => {
+      try {
+        return await adminService.updateUser(params.userId, user.userId, body)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ userId: t.String() }),
+      body: t.Object({
+        name: t.Optional(t.String({ minLength: 1 })),
+        email: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  .post(
+    '/users/:userId/activate',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.activateUser(params.userId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .post(
+    '/users/:userId/deactivate',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.deactivateUser(params.userId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .delete(
+    '/users/:userId',
+    async ({ params, user, set }) => {
+      try {
+        await adminService.deleteUser(params.userId, user.userId)
+        set.status = 204
+        return null
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  // ─── Room management ────────────────────────────────────────────────────────
+
+  .get('/rooms', async () => {
+    const roomsList = await adminService.listAllRooms()
+    return { rooms: roomsList }
+  })
+
+  .post(
+    '/rooms/:roomId/assign-host',
+    async ({ params, body, user, set }) => {
+      try {
+        return await adminService.assignHostToRoom(params.roomId, body.hostId, user.userId)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ roomId: t.String() }),
+      body: t.Object({ hostId: t.String() }),
+    },
+  )
+
+  .post(
+    '/rooms/:roomId/activate',
+    async ({ params, set }) => {
+      try {
+        return await adminService.setRoomActive(params.roomId, true)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
+  .post(
+    '/rooms/:roomId/deactivate',
+    async ({ params, set }) => {
+      try {
+        return await adminService.setRoomActive(params.roomId, false)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
+  // ─── Sessions ───────────────────────────────────────────────────────────────
+
+  .get('/sessions', async () => {
+    const sessions = await sessionService.getSessionHistory()
+    return { sessions }
+  })
+
+  .get(
+    '/sessions/:roomId',
+    async ({ params }) => {
+      const sessions = await sessionService.getSessionHistory(params.roomId)
+      return { sessions }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )

@@ -2,14 +2,28 @@
   "name": "webroom_server",
   "version": "1.0.50",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:genpush": "drizzle-kit generate && drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "bun src/db/seed.ts"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/jwt": "^1.4.1",
+    "@stream-io/node-sdk": "^0.7.45",
+    "drizzle-orm": "^0.45.1",
+    "elysia": "latest",
+    "ioredis": "^5.10.1",
+    "nanoid": "^5.1.7",
+    "postgres": "^3.4.8"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "drizzle-kit": "^0.31.10"
   },
   "module": "src/index.js"
 }

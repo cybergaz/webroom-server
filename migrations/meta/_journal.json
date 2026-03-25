@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1774081609509,
+      "tag": "0000_ambitious_luckman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774102567342,
+      "tag": "0001_classy_shape",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774110442442,
+      "tag": "0002_flowery_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774112902647,
+      "tag": "0003_white_king_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774118765792,
+      "tag": "0004_unique_krista_starr",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774119276341,
+      "tag": "0005_silent_tombstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774257395082,
+      "tag": "0006_ambitious_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774270911923,
+      "tag": "0007_sad_red_hulk",
+      "breakpoints": true
+    }
+  ]
+}
