@@ -1,6 +1,6 @@
-import { and, eq, exists, or } from 'drizzle-orm';
+import { and, eq, exists, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client';
-import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens } from '../db/schema';
+import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
 import { sendToUser } from '../lib/ws-manager';
 import { ensureCallHost } from '../lib/getstream';
 
@@ -528,6 +528,44 @@ export async function listAllRoomsWithMembership(adminId: string, userId: string
     ...room,
     isMember: isMember !== null,
   }));
+}
+
+// ─── Room Activity (live rooms + active participants) ────────────────────────
+
+export async function getLiveRoomsWithParticipants(adminId: string) {
+  const liveRooms = await db.query.rooms.findMany({
+    where: and(eq(rooms.createdBy, adminId), eq(rooms.status, 'live')),
+    columns: { id: true, name: true },
+  });
+
+  const result = await Promise.all(
+    liveRooms.map(async (room) => {
+      const session = await db.query.roomSessions.findFirst({
+        where: and(eq(roomSessions.roomId, room.id), isNull(roomSessions.endedAt)),
+        columns: { id: true },
+      });
+
+      if (!session) return { ...room, participants: [] };
+
+      const participants = await db
+        .select({
+          userId: sessionParticipants.userId,
+          name: users.name,
+        })
+        .from(sessionParticipants)
+        .innerJoin(users, eq(users.id, sessionParticipants.userId))
+        .where(
+          and(
+            eq(sessionParticipants.sessionId, session.id),
+            isNull(sessionParticipants.leftAt),
+          ),
+        );
+
+      return { ...room, participants };
+    }),
+  );
+
+  return result;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

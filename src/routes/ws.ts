@@ -15,21 +15,31 @@
  */
 
 import Elysia from 'elysia';
+import { eq } from 'drizzle-orm';
 import { verifyWsToken, type UserRole } from '../lib/jwt';
-import { connections, get_ws_data, set_ws_data, unregisterConnection, WebSocketData } from '../lib/ws-manager';
-import { getActiveSession, recordSpeakingStart, recordSpeakingEnd } from '../services/session.service';
+import { connections, get_ws_data, set_ws_data, unregisterConnection, sendToUser, WebSocketData } from '../lib/ws-manager';
+import { db } from '../db/client';
+import { rooms, users } from '../db/schema';
 import { ElysiaWS } from 'elysia/dist/ws';
 
-async function handleSpeakingStart(roomId: string, userId: string): Promise<void> {
-  const session = await getActiveSession(roomId);
-  if (!session) return;
-  await recordSpeakingStart(session.id, userId);
-}
+async function relaySpeakingEvent(event: 'speaking.start' | 'speaking.end', roomId: string, userId: string): Promise<void> {
+  const room = await db.query.rooms.findFirst({
+    where: eq(rooms.id, roomId),
+    columns: { createdBy: true, name: true },
+  });
+  if (!room) return;
 
-async function handleSpeakingEnd(roomId: string, userId: string): Promise<void> {
-  const session = await getActiveSession(roomId);
-  if (!session) return;
-  await recordSpeakingEnd(session.id, userId);
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { name: true },
+  });
+
+  await sendToUser(room.createdBy, event, {
+    roomId,
+    roomName: room.name,
+    userId,
+    userName: user?.name ?? 'Unknown',
+  });
 }
 
 export const wsRoute = new Elysia()
@@ -113,9 +123,9 @@ export const wsRoute = new Elysia()
     message: async (ws, raw) => {
       try {
         const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        console.log("msg -> ", msg);
+        // console.log("msg -> ", msg);
         const userId = get_ws_data(ws, 'userId');
-        console.log("userId -> ", userId);
+        // console.log("userId -> ", userId);
         // console.log("message: userId -> ", userId);
         // console.log("event -> ", msg.event);
 
@@ -130,10 +140,14 @@ export const wsRoute = new Elysia()
         }
 
         if (msg.event === 'speaking.start') {
+          const roomId = msg.payload?.roomId;
+          if (roomId && userId) relaySpeakingEvent('speaking.start', roomId, userId);
           return;
         }
 
         if (msg.event === 'speaking.end') {
+          const roomId = msg.payload?.roomId;
+          if (roomId && userId) relaySpeakingEvent('speaking.end', roomId, userId);
           return;
         }
 

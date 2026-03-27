@@ -379,4 +379,11 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
       return { sessions };
     },
     { params: t.Object({ roomId: t.String() }) },
-  );
+  )
+
+  // ─── Room Activity (live rooms with active participants) ──────────────────
+
+  .get('/room-activity', async ({ user }) => {
+    const liveRooms = await adminService.getLiveRoomsWithParticipants(user.userId);
+    return { rooms: liveRooms };
+  });
