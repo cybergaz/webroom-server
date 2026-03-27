@@ -168,6 +168,24 @@ const managedRoomRoutes = new Elysia({ prefix: '/rooms' })
     },
   )
 
+  // ─── POST /rooms/members (assign user to multiple rooms) ────────────────────
+  .post(
+    '/members',
+    async ({ body, user, set }) => {
+      try {
+        const result = await roomService.addMemberToRooms(body.roomIds, user.userId, body.userId, user.role)
+        set.status = 201
+        return result
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      body: t.Object({ roomIds: t.Array(t.String()), userId: t.String() }),
+    },
+  )
+
   // ─── DELETE /rooms/:roomId/members/:userId (kick) ────────────────────────────
   .delete(
     '/:roomId/members/:userId',

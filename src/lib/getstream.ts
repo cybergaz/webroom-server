@@ -1,7 +1,13 @@
 import { StreamClient } from '@stream-io/node-sdk';
 import { env } from '../config/env';
 
-export const streamClient = new StreamClient(env.getstream.apiKey, env.getstream.apiSecret);
+export const streamClient = new StreamClient(
+  env.getstream.apiKey,
+  env.getstream.apiSecret,
+  {
+    timeout: 10000, // 10 seconds timeout for API calls
+  }
+);
 
 /**
  * Generate a GetStream token for a user. Called on login and room join.
@@ -16,15 +22,35 @@ export function generateGetstreamToken(userId: string): string {
  * We use a deterministic call ID derived from our room UUID.
  */
 export async function createGetstreamCall(callId: string, adminUserId: string, name: string) {
-  console.log("Creating GetStream call with ID: ", callId);
+  // console.log("Creating GetStream call with ID: ", callId);
   const call = streamClient.video.call(env.getstream.callType, callId);
   await call.getOrCreate({
     data: {
       created_by_id: adminUserId,
+      members: [{ user_id: adminUserId, role: 'host' }],
       custom: { name },
     },
   });
   return call;
+}
+
+/**
+ * Ensure a user has the 'host' role on a GetStream call.
+ * Used when a host (who didn't originally create the call) starts the room.
+ */
+export async function ensureCallHost(callId: string, hostUserId: string) {
+  const call = streamClient.video.call(env.getstream.callType, callId);
+  // getOrCreate is idempotent — creates the call if it doesn't exist yet,
+  // otherwise returns the existing one.
+  await call.getOrCreate({
+    data: {
+      created_by_id: hostUserId,
+      members: [{ user_id: hostUserId, role: 'host' }],
+    },
+  });
+  await call.updateCallMembers({
+    update_members: [{ user_id: hostUserId, role: 'host' }],
+  });
 }
 
 export function getGetstreamCall(callId: string) {
@@ -66,15 +92,12 @@ export async function kickUserFromCall(callId: string, targetUserId: string) {
 }
 
 /**
- * End a GetStream call. All participants are disconnected by the SDK.
+ * Stop a GetStream call session. Returns the call to backstage mode so it
+ * can be started again later with goLive(). Does NOT permanently end the call.
  */
 export async function endGetstreamCall(callId: string) {
   const call = getGetstreamCall(callId);
-  // const response = await call.queryCallParticipants({ filter_conditions: { user_id: "58d5ff12-142a-40ca-9547-8c7aa138a3d2" } });
-  // console.log("response -> ", response);
-  // const res = await call.queryMembers();
-  // console.log("res -> ", res);
-  await call.end();
+  await call.stopLive();
 }
 
 /**

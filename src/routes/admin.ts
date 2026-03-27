@@ -1,7 +1,7 @@
-import Elysia, { t } from 'elysia'
-import { adminPlugin } from '../middleware/auth'
-import * as adminService from '../services/admin.service'
-import * as sessionService from '../services/session.service'
+import Elysia, { t } from 'elysia';
+import { adminPlugin } from '../middleware/auth';
+import * as adminService from '../services/admin.service';
+import * as sessionService from '../services/session.service';
 
 export const adminRoute = new Elysia({ prefix: '/admin' })
   .use(adminPlugin)
@@ -9,20 +9,20 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
   // ─── Host CRUD ───────────────────────────────────────────────────────────────
 
   .get('/hosts', async ({ user }) => {
-    const hosts = await adminService.listHosts(user.userId)
-    return { hosts }
+    const hosts = await adminService.listHosts(user.userId);
+    return { hosts };
   })
 
   .post(
     '/hosts',
     async ({ body, user, set }) => {
       try {
-        const host = await adminService.createHost(user.userId, body)
-        set.status = 201
-        return host
+        const host = await adminService.createHost(user.userId, body);
+        set.status = 201;
+        return host;
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -39,10 +39,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/hosts/:hostId',
     async ({ params, body, user, set }) => {
       try {
-        return await adminService.updateHost(params.hostId, user.userId, body)
+        return await adminService.updateHost(params.hostId, user.userId, body);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -58,10 +58,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/hosts/:hostId/activate',
     async ({ params, user, set }) => {
       try {
-        return await adminService.activateHost(params.hostId, user.userId)
+        return await adminService.activateHost(params.hostId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ hostId: t.String() }) },
@@ -71,10 +71,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/hosts/:hostId/deactivate',
     async ({ params, user, set }) => {
       try {
-        return await adminService.deactivateHost(params.hostId, user.userId)
+        return await adminService.deactivateHost(params.hostId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ hostId: t.String() }) },
@@ -84,12 +84,38 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/hosts/:hostId',
     async ({ params, user, set }) => {
       try {
-        await adminService.deleteHost(params.hostId, user.userId)
-        set.status = 204
-        return null
+        await adminService.deleteHost(params.hostId, user.userId);
+        set.status = 204;
+        return null;
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  .post(
+    '/hosts/:hostId/adopt',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.adoptUser(user.userId, params.hostId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  .delete(
+    '/hosts/:hostId/adopt',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.unadoptUser(user.userId, params.hostId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ hostId: t.String() }) },
@@ -99,17 +125,17 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .get(
     '/users/search',
-    async ({ query, set }) => {
+    async ({ query, user, set }) => {
       try {
-        const user = await adminService.searchPendingUser(query.requestId)
-        if (!user) {
-          set.status = 404
-          return { error: 'No pending user found with this request ID' }
+        const result = await adminService.searchUser(query.requestId, user.userId);
+        if (!result) {
+          set.status = 404;
+          return { error: 'No user found with this request ID', code: 'USER_NOT_FOUND' };
         }
-        return { user }
+        return result;
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { query: t.Object({ requestId: t.String({ minLength: 1 }) }) },
@@ -119,10 +145,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId/approve',
     async ({ params, body, user, set }) => {
       try {
-        return await adminService.approveUser(params.userId, user.userId, body?.temporaryPassword)
+        return await adminService.approveOrAdopt(params.userId, user.userId, body?.temporaryPassword);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -135,10 +161,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId/reject',
     async ({ params, set }) => {
       try {
-        return await adminService.rejectUser(params.userId)
+        return await adminService.rejectUser(params.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ userId: t.String() }) },
@@ -148,30 +174,30 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId/force-logout',
     async ({ params, user, set }) => {
       try {
-        return await adminService.forceLogoutUser(params.userId, user.userId)
+        return await adminService.forceLogoutUser(params.userId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ userId: t.String() }) },
   )
 
   .get('/users', async ({ user }) => {
-    const usersList = await adminService.listUsers(user.userId)
-    return { users: usersList }
+    const usersList = await adminService.listUsers(user.userId);
+    return { users: usersList };
   })
 
   .post(
     '/users',
     async ({ body, user, set }) => {
       try {
-        const created = await adminService.createUser(user.userId, body)
-        set.status = 201
-        return created
+        const created = await adminService.createUser(user.userId, body);
+        set.status = 201;
+        return created;
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -188,10 +214,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId',
     async ({ params, body, user, set }) => {
       try {
-        return await adminService.updateUser(params.userId, user.userId, body)
+        return await adminService.updateUser(params.userId, user.userId, body);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -207,10 +233,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId/activate',
     async ({ params, user, set }) => {
       try {
-        return await adminService.activateUser(params.userId, user.userId)
+        return await adminService.activateUser(params.userId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ userId: t.String() }) },
@@ -220,10 +246,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId/deactivate',
     async ({ params, user, set }) => {
       try {
-        return await adminService.deactivateUser(params.userId, user.userId)
+        return await adminService.deactivateUser(params.userId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ userId: t.String() }) },
@@ -233,12 +259,38 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/users/:userId',
     async ({ params, user, set }) => {
       try {
-        await adminService.deleteUser(params.userId, user.userId)
-        set.status = 204
-        return null
+        await adminService.deleteUser(params.userId, user.userId);
+        set.status = 204;
+        return null;
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .post(
+    '/users/:userId/adopt',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.adoptUser(user.userId, params.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .delete(
+    '/users/:userId/adopt',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.unadoptUser(user.userId, params.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ userId: t.String() }) },
@@ -246,19 +298,26 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   // ─── Room management ────────────────────────────────────────────────────────
 
-  .get('/rooms', async () => {
-    const roomsList = await adminService.listAllRooms()
-    return { rooms: roomsList }
+  .get('/rooms', async ({ user }) => {
+    const roomsList = await adminService.listAllRooms(user.userId);
+    return { rooms: roomsList };
   })
+
+  .get('/rooms-with-membership/:userId', async ({ user, params }) => {
+    const roomsList = await adminService.listAllRoomsWithMembership(user.userId, params.userId);
+    return { rooms: roomsList };
+  },
+    { params: t.Object({ userId: t.String() }) },
+  )
 
   .post(
     '/rooms/:roomId/assign-host',
     async ({ params, body, user, set }) => {
       try {
-        return await adminService.assignHostToRoom(params.roomId, body.hostId, user.userId)
+        return await adminService.assignHostToRoom(params.roomId, body.hostId, user.userId);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     {
@@ -268,13 +327,26 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
   )
 
   .post(
+    '/rooms/:roomId/unassign-host',
+    async ({ params, set }) => {
+      try {
+        return await adminService.unassignHostFromRoom(params.roomId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
+  .post(
     '/rooms/:roomId/activate',
     async ({ params, set }) => {
       try {
-        return await adminService.setRoomActive(params.roomId, true)
+        return await adminService.setRoomActive(params.roomId, true);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ roomId: t.String() }) },
@@ -284,10 +356,10 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/rooms/:roomId/deactivate',
     async ({ params, set }) => {
       try {
-        return await adminService.setRoomActive(params.roomId, false)
+        return await adminService.setRoomActive(params.roomId, false);
       } catch (err: any) {
-        set.status = err.status ?? 500
-        return { error: err.message }
+        set.status = err.status ?? 500;
+        return { error: err.message };
       }
     },
     { params: t.Object({ roomId: t.String() }) },
@@ -296,15 +368,15 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
   // ─── Sessions ───────────────────────────────────────────────────────────────
 
   .get('/sessions', async () => {
-    const sessions = await sessionService.getSessionHistory()
-    return { sessions }
+    const sessions = await sessionService.getSessionHistory();
+    return { sessions };
   })
 
   .get(
     '/sessions/:roomId',
     async ({ params }) => {
-      const sessions = await sessionService.getSessionHistory(params.roomId)
-      return { sessions }
+      const sessions = await sessionService.getSessionHistory(params.roomId);
+      return { sessions };
     },
     { params: t.Object({ roomId: t.String() }) },
-  )
+  );

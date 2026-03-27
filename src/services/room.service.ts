@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { rooms, roomMembers } from '../db/schema';
 import {
   createGetstreamCall,
+  ensureCallHost,
   generateGetstreamToken,
   muteUserInCall,
   muteAllInCall,
@@ -65,6 +66,10 @@ export async function createRoom(
     })
     .returning();
 
+  if (hostId) {
+    await addMember(room.id, actorId, hostId, 'host');
+  }
+
   return {
     roomId: room.id,
     name: room.name,
@@ -92,7 +97,7 @@ export async function getRoom(roomId: string, userId: string) {
 
 
   return {
-    roomId: room.id,
+    id: room.id,
     name: room.name,
     description: room.description,
     status: room.status,
@@ -130,6 +135,10 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
 
   await db.update(rooms).set({ status: 'live' }).where(eq(rooms.id, roomId));
   const session = await sessionService.getOrCreateSession(roomId);
+
+  // Ensure the current host has the 'host' role on the GetStream call,
+  // even if they weren't the original creator (e.g. admin reassigned hosts).
+  await ensureCallHost(room.getstreamCallId, actorId);
 
   // Record the host as the first participant
   await sessionService.recordParticipantJoin(session.id, actorId);
@@ -247,6 +256,26 @@ export async function addMember(roomId: string, actorId: string, targetUserId: s
   if (!member) throw Object.assign(new Error('User is already a member of this room'), { status: 409 });
 
   return { userId: member.userId, roomId: member.roomId, addedAt: member.addedAt };
+}
+
+// ─── Add member to multiple rooms ────────────────────────────────────────────
+
+export async function addMemberToRooms(roomIds: string[], actorId: string, targetUserId: string, actorRole: UserRole) {
+  const results = await Promise.all(
+    roomIds.map(async (roomId) => {
+      await assertRoomManager(roomId, actorId, actorRole);
+
+      const [member] = await db
+        .insert(roomMembers)
+        .values({ roomId, userId: targetUserId })
+        .onConflictDoNothing()
+        .returning();
+
+      return member ? { userId: member.userId, roomId: member.roomId, addedAt: member.addedAt } : null;
+    }),
+  );
+
+  return results.filter(Boolean);
 }
 
 // ─── Remove member ────────────────────────────────────────────────────────────

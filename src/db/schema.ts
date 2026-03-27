@@ -40,6 +40,25 @@ export const users = pgTable(
   ],
 );
 
+// ─── Admin User Adoptions ─────────────────────────────────────────────────────
+
+export const adminUserAdoptions = pgTable(
+  'admin_user_adoptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminId: uuid('admin_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    adoptedAt: timestamp('adopted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('uq_admin_user_adoptions').on(t.adminId, t.userId),
+    index('idx_admin_user_adoptions_admin').on(t.adminId),
+    index('idx_admin_user_adoptions_user').on(t.userId),
+  ],
+);
+
+export type AdminUserAdoption = typeof adminUserAdoptions.$inferSelect;
+
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 
 export const rooms = pgTable(

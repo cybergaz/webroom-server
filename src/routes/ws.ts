@@ -113,7 +113,9 @@ export const wsRoute = new Elysia()
     message: async (ws, raw) => {
       try {
         const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        console.log("msg -> ", msg);
         const userId = get_ws_data(ws, 'userId');
+        console.log("userId -> ", userId);
         // console.log("message: userId -> ", userId);
         // console.log("event -> ", msg.event);
 
@@ -128,14 +130,10 @@ export const wsRoute = new Elysia()
         }
 
         if (msg.event === 'speaking.start') {
-          const roomId = msg.payload?.roomId;
-          if (roomId) handleSpeakingStart(roomId, userId!).catch(console.error);
           return;
         }
 
         if (msg.event === 'speaking.end') {
-          const roomId = msg.payload?.roomId;
-          if (roomId) handleSpeakingEnd(roomId, userId!).catch(console.error);
           return;
         }
 

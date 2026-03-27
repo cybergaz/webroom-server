@@ -12,6 +12,7 @@ import {
 } from '../lib/jwt';
 import { generateGetstreamToken } from '../lib/getstream';
 import { blacklistToken } from '../lib/redis';
+import { customAlphabet } from 'nanoid';
 
 // ─── Request ID generator ────────────────────────────────────────────────────
 
@@ -19,10 +20,7 @@ const REQUEST_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 to av
 
 async function generateRequestId(): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    let id = '';
-    for (let i = 0; i < 8; i++) {
-      id += REQUEST_ID_CHARS[Math.floor(Math.random() * REQUEST_ID_CHARS.length)];
-    }
+    let id = customAlphabet(REQUEST_ID_CHARS, 8)();
     const existing = await db.query.users.findFirst({
       where: eq(users.requestId, id),
       columns: { id: true },
@@ -89,7 +87,7 @@ export async function checkStatus(requestId: string) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export async function login(identifier: { phone?: string; email?: string }, password: string) {
+export async function login(identifier: { phone?: string; email?: string; }, password: string) {
   if (!identifier.phone && !identifier.email) {
     throw Object.assign(new Error('Phone or email is required'), { status: 400 });
   }
@@ -122,7 +120,7 @@ export async function login(identifier: { phone?: string; email?: string }, pass
 
 export async function refresh(refreshToken: string) {
   const payload = await verifyRefreshToken(refreshToken);
-  if (!payload) throw Object.assign(new Error('Invalid or expired refresh token'), { status: 401 });
+  if (!payload) throw Object.assign(new Error('Invalid or expired refresh token'), { status: 403 });
 
   const tokenHash = await hashToken(refreshToken);
   const stored = await db.query.refreshTokens.findFirst({
@@ -130,7 +128,7 @@ export async function refresh(refreshToken: string) {
   });
 
   if (!stored || stored.expiresAt < new Date()) {
-    throw Object.assign(new Error('Refresh token not found or expired'), { status: 401 });
+    throw Object.assign(new Error('Refresh token not found or expired'), { status: 403 });
   }
 
   const user = await db.query.users.findFirst({
@@ -141,7 +139,7 @@ export async function refresh(refreshToken: string) {
   // Rotate: delete old token, issue new pair
   await db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash));
 
-  return issueTokens(user);
+  return issueTokens(user satisfies UserType);
 }
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
@@ -168,14 +166,16 @@ export async function setPassword(phone: string, otp: string, newPassword: strin
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function issueTokens(user: {
+interface UserType {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   email: string | null;
   role: UserRole;
   status: 'pending_approval' | 'approved' | 'rejected';
-}) {
+}
+
+async function issueTokens(user: UserType) {
   const [accessToken, { token: newRefresh }] = await Promise.all([
     signAccessToken(user.id, user.role),
     signRefreshToken(user.id),

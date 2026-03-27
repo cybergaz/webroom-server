@@ -54,4 +54,20 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiaG9zdCIsInR5cGUiOiJhY2Nlc
 
 ### 
 
-WS ws://localhost:4000/v1/ws HTTP/1.1
+WS ws://localhost:4000/v1/ws?token=eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiaG9zdCIsInR5cGUiOiJhY2Nlc3MiLCJqdGkiOiIyY2JlMTk3ZC05OThhLTQzMzctYTEyZC1kNjFiZjU0YzFhMTkiLCJzdWIiOiI1OGQ1ZmYxMi0xNDJhLTQwY2EtOTU0Ny04YzdhYTEzOGEzZDIiLCJpYXQiOjE3NzQ0ODA1MjcsImV4cCI6MTc3NDQ4MTQyN30.gI4e9cLjM8r3n8NbxYjUOc_cdptW7i6ZsLqKDgm_xpg HTTP/1.1
+
+
+### 
+
+WS wss://api.amigochats.com/webroom-ws?token=eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiaG9zdCIsInR5cGUiOiJhY2Nlc3MiLCJqdGkiOiIyY2JlMTk3ZC05OThhLTQzMzctYTEyZC1kNjFiZjU0YzFhMTkiLCJzdWIiOiI1OGQ1ZmYxMi0xNDJhLTQwY2EtOTU0Ny04YzdhYTEzOGEzZDIiLCJpYXQiOjE3NzQ0ODA1MjcsImV4cCI6MTc3NDQ4MTQyN30.gI4e9cLjM8r3n8NbxYjUOc_cdptW7i6ZsLqKDgm_xpg HTTP/1.1
+
+
+### 
+
+POST https://api.amigochats.com/webroom/v1/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "email": "admin@gmail.com",
+  "password": "Admin@123"
+}
