@@ -108,3 +108,39 @@ export async function getCallParticipants(callId: string) {
   const response = await call.get();
   return response.call;
 }
+
+/**
+ * Start recording a call. Requires the call to be live.
+ * Records audio-only since these are audio rooms.
+ */
+export async function startCallRecording(callId: string) {
+  const call = getGetstreamCall(callId);
+  await call.update({
+    settings_override: {
+      recording: {
+        mode: 'available',
+        audio_only: true,
+        quality: '720p',
+      },
+    },
+  });
+  await call.startRecording({ recording_type: 'composite' });
+}
+
+/**
+ * Stop recording a call.
+ */
+export async function stopCallRecording(callId: string) {
+  const call = getGetstreamCall(callId);
+  await call.stopRecording({ recording_type: 'composite' });
+}
+
+/**
+ * List all recordings for a call across all sessions.
+ * Returns recordings grouped by session with signed download URLs.
+ */
+export async function listCallRecordings(callId: string) {
+  const call = getGetstreamCall(callId);
+  const response = await call.listRecordings();
+  return response.recordings;
+}

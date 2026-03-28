@@ -17,7 +17,7 @@
 import Elysia from 'elysia';
 import { eq } from 'drizzle-orm';
 import { verifyWsToken, type UserRole } from '../lib/jwt';
-import { connections, get_ws_data, set_ws_data, unregisterConnection, sendToUser, WebSocketData } from '../lib/ws-manager';
+import { connections, get_ws_data, set_ws_data, unregisterConnection, sendToUser, startHostGracePeriod, cancelHostGracePeriod, WebSocketData } from '../lib/ws-manager';
 import { db } from '../db/client';
 import { rooms, users } from '../db/schema';
 import { ElysiaWS } from 'elysia/dist/ws';
@@ -111,13 +111,11 @@ export const wsRoute = new Elysia()
       set_ws_data(ws, data);
 
       connections.set(payload!.sub, { ws: ws });
-      // connections.forEach((value, key) => {
-      //   console.log(`Connection - userId: ${key}, readyState: ${value.ws.readyState}`);
-      // });
 
-      // const { userId } = (ws.data as unknown) as ;
-      // console.log("open ws userId -> ", userId);
-      // registerConnection(userId, ws as any);
+      // If this user is a host with a pending grace timer, cancel it
+      if (payload!.role === 'host' || payload!.role === 'admin' || payload!.role === 'super_admin') {
+        cancelHostGracePeriod(payload!.sub).catch(() => {});
+      }
     },
 
     message: async (ws, raw) => {
@@ -172,6 +170,14 @@ export const wsRoute = new Elysia()
     close(ws) {
       console.log('WebSocket connection closed');
       const userId = get_ws_data(ws, 'userId');
+      const role = get_ws_data(ws, 'role');
       unregisterConnection(userId!);
+
+      // If a host/admin disconnects, check if they're hosting any live rooms
+      if (userId && (role === 'host' || role === 'admin' || role === 'super_admin')) {
+        startHostGracePeriod(userId).catch((e) =>
+          console.error('[WS] Failed to start host grace period:', e),
+        );
+      }
     },
   });

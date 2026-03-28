@@ -2,6 +2,7 @@ import Elysia, { t } from 'elysia';
 import { adminPlugin } from '../middleware/auth';
 import * as adminService from '../services/admin.service';
 import * as sessionService from '../services/session.service';
+import * as roomService from '../services/room.service';
 
 export const adminRoute = new Elysia({ prefix: '/admin' })
   .use(adminPlugin)
@@ -377,6 +378,22 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     async ({ params }) => {
       const sessions = await sessionService.getSessionHistory(params.roomId);
       return { sessions };
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
+  // ─── Room Recordings ─────────────────────────────────────────────────────
+
+  .get(
+    '/rooms/:roomId/recordings',
+    async ({ params, set }) => {
+      try {
+        const recordings = await roomService.getRoomRecordings(params.roomId);
+        return { recordings };
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
     },
     { params: t.Object({ roomId: t.String() }) },
   )

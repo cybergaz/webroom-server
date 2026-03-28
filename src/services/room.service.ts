@@ -9,12 +9,15 @@ import {
   muteAllInCall,
   kickUserFromCall,
   endGetstreamCall,
+  startCallRecording,
+  stopCallRecording,
+  listCallRecordings,
 } from '../lib/getstream';
 import { env } from '../config/env';
 import type { UserRole } from '../lib/jwt';
 import * as sessionService from './session.service';
 import { nanoid } from 'nanoid';
-import { sendToUser } from '../lib/ws-manager';
+import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
 
 // ─── List rooms ───────────────────────────────────────────────────────────────
 
@@ -134,6 +137,12 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
   }
 
   await db.update(rooms).set({ status: 'live' }).where(eq(rooms.id, roomId));
+
+  // NOTE: We do NOT broadcast room.status_changed here.
+  // The host client calls /rooms/:roomId/host-ready after goLive() succeeds,
+  // which then broadcasts to members. This prevents the race condition where
+  // a fast user joins the GetStream call before the host is actually ready.
+
   const session = await sessionService.getOrCreateSession(roomId);
 
   // Ensure the current host has the 'host' role on the GetStream call,
@@ -152,6 +161,32 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
     getstreamToken: generateGetstreamToken(actorId),
     getstreamApiKey: env.getstream.apiKey,
   };
+}
+
+// ─── Host ready (host confirms they joined the call and went live) ───────────
+// Called by the host client after goLive() succeeds. Broadcasts to all members
+// so they know the room is truly ready to join.
+
+export async function confirmHostReady(roomId: string, actorId: string, actorRole: UserRole) {
+  const room = await assertRoomManager(roomId, actorId, actorRole);
+
+  if (room.status !== 'live') {
+    throw Object.assign(new Error('Room is not live'), { status: 409 });
+  }
+
+  // Start recording the call now that the host is live
+  console.log('[Recording] Starting recording for call', room.getstreamCallId);
+  await startCallRecording(room.getstreamCallId).then(() => {
+    console.log('[Recording] Recording started for call', room.getstreamCallId);
+  }).catch((err) => {
+    console.error('[Recording] Failed to start recording for call', room.getstreamCallId, err?.message ?? err);
+  });
+
+  await sendToRoomMembers(roomId, 'room.status_changed', {
+    roomId,
+    roomName: room.name,
+    status: 'live',
+  });
 }
 
 // ─── Join room (user action) ──────────────────────────────────────────────────
@@ -203,6 +238,8 @@ export async function leaveRoom(roomId: string, userId: string) {
   }
 
   // Host left — shut down the session
+  await stopCallRecording(room.getstreamCallId).catch(() => { });
+
   const members = await db.query.roomMembers.findMany({ where: eq(roomMembers.roomId, roomId) });
   await Promise.allSettled(members.map((m) => kickUserFromCall(room.getstreamCallId, m.userId)));
 
@@ -212,6 +249,13 @@ export async function leaveRoom(roomId: string, userId: string) {
   if (activeSession) await sessionService.endSession(activeSession.id);
 
   await db.update(rooms).set({ status: 'active' }).where(eq(rooms.id, roomId));
+
+  // Notify all room members of status change back to active
+  await sendToRoomMembers(roomId, 'room.status_changed', {
+    roomId,
+    roomName: room.name,
+    status: 'active',
+  });
 }
 
 // ─── Delete room ──────────────────────────────────────────────────────────────
@@ -255,6 +299,14 @@ export async function addMember(roomId: string, actorId: string, targetUserId: s
 
   if (!member) throw Object.assign(new Error('User is already a member of this room'), { status: 409 });
 
+  // Notify the added user so their room list refreshes
+  const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId), columns: { id: true, name: true, status: true } });
+  await sendToUser(targetUserId, 'room.member_added', {
+    roomId,
+    roomName: room?.name,
+    roomStatus: room?.status,
+  });
+
   return { userId: member.userId, roomId: member.roomId, addedAt: member.addedAt };
 }
 
@@ -271,6 +323,14 @@ export async function addMemberToRooms(roomIds: string[], actorId: string, targe
         .onConflictDoNothing()
         .returning();
 
+      if (member) {
+        const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId), columns: { id: true, name: true, status: true } });
+        await sendToUser(targetUserId, 'room.member_added', {
+          roomId,
+          roomName: room?.name,
+          roomStatus: room?.status,
+        });
+      }
       return member ? { userId: member.userId, roomId: member.roomId, addedAt: member.addedAt } : null;
     }),
   );
@@ -286,6 +346,9 @@ export async function removeMember(roomId: string, actorId: string, targetUserId
   await db
     .delete(roomMembers)
     .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, targetUserId)));
+
+  // Notify the removed user so their room list refreshes
+  await sendToUser(targetUserId, 'room.member_removed', { roomId });
 
   await kickUserFromCall(room.getstreamCallId, targetUserId).catch(() => { });
 
@@ -365,6 +428,9 @@ export async function endRoom(roomId: string, actorId: string, actorRole: UserRo
     throw Object.assign(new Error('Room is not live'), { status: 409 });
   }
 
+  // Stop recording before ending the call (may already be stopped if host called stopLive)
+  await stopCallRecording(room.getstreamCallId).catch(() => { });
+
   const members = await db.query.roomMembers.findMany({ where: eq(roomMembers.roomId, roomId) });
   // console.log('Ending room, kicking members:', members.map((m) => m.userId));
   await Promise.allSettled(members.map((m) => kickUserFromCall(room.getstreamCallId, m.userId)));
@@ -376,13 +442,13 @@ export async function endRoom(roomId: string, actorId: string, actorRole: UserRo
 
   // send ws message for room end to all members in the room
   // console.log('Notifying members of room end:');
-  members.map(async (m) =>
-    await sendToUser(
+  await Promise.all(members.map((m) =>
+    sendToUser(
       m.userId,
       'room.ended',
       { roomId },
     )
-  );
+  ));
 
   const [updated] = await db
     .update(rooms)
@@ -390,7 +456,23 @@ export async function endRoom(roomId: string, actorId: string, actorRole: UserRo
     .where(eq(rooms.id, roomId))
     .returning({ id: rooms.id, status: rooms.status });
 
+  // Notify all room members of status change back to active
+  await sendToRoomMembers(roomId, 'room.status_changed', {
+    roomId,
+    roomName: room.name,
+    status: 'active',
+  });
+
   return updated;
+}
+
+// ─── Recordings ──────────────────────────────────────────────────────────────
+
+export async function getRoomRecordings(roomId: string) {
+  const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId) });
+  if (!room) throw Object.assign(new Error('Room not found'), { status: 404 });
+
+  return listCallRecordings(room.getstreamCallId);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

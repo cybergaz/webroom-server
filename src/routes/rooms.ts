@@ -72,6 +72,22 @@ const managedRoomRoutes = new Elysia({ prefix: '/rooms' })
     { params: t.Object({ roomId: t.String() }) },
   )
 
+  // ─── POST /rooms/:roomId/host-ready ───────────────────────────────────────────
+  .post(
+    '/:roomId/host-ready',
+    async ({ params, user, set }) => {
+      try {
+        await roomService.confirmHostReady(params.roomId, user.userId, user.role)
+        set.status = 204
+        return null
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
   // ─── GET /rooms/:roomId/sessions ────────────────────────────────────────────
   .get(
     '/:roomId/sessions',

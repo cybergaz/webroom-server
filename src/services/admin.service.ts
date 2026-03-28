@@ -1,7 +1,7 @@
 import { and, eq, exists, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client';
 import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
-import { sendToUser } from '../lib/ws-manager';
+import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
 import { ensureCallHost } from '../lib/getstream';
 
 const err = (status: number, message: string) => Object.assign(new Error(message), { status });
@@ -222,6 +222,13 @@ export async function assignHostToRoom(roomId: string, hostId: string, adminId: 
     await ensureCallHost(room.getstreamCallId, hostId);
   }
 
+  // Notify the host so their room list refreshes
+  await sendToUser(hostId, 'room.member_added', {
+    roomId,
+    roomName: room.name,
+    roomStatus: room.status,
+  });
+
   return updated;
 }
 
@@ -245,11 +252,19 @@ export async function setRoomActive(roomId: string, active: boolean) {
   if (room.status === 'ended') throw err(409, 'Cannot change status of a permanently ended room');
   if (room.status === 'live') throw err(409, 'Room is currently live — end the session first');
 
+  const newStatus = active ? 'active' : 'inactive';
   const [updated] = await db
     .update(rooms)
-    .set({ status: active ? 'active' : 'inactive' })
+    .set({ status: newStatus })
     .where(eq(rooms.id, roomId))
     .returning({ id: rooms.id, status: rooms.status });
+
+  // Notify all room members of status change
+  await sendToRoomMembers(roomId, 'room.status_changed', {
+    roomId,
+    roomName: room.name,
+    status: newStatus,
+  });
 
   return updated;
 }
@@ -535,7 +550,7 @@ export async function listAllRoomsWithMembership(adminId: string, userId: string
 export async function getLiveRoomsWithParticipants(adminId: string) {
   const liveRooms = await db.query.rooms.findMany({
     where: and(eq(rooms.createdBy, adminId), eq(rooms.status, 'live')),
-    columns: { id: true, name: true },
+    columns: { id: true, name: true, hostId: true },
   });
 
   const result = await Promise.all(
@@ -545,7 +560,17 @@ export async function getLiveRoomsWithParticipants(adminId: string) {
         columns: { id: true },
       });
 
-      if (!session) return { ...room, participants: [] };
+      // Resolve host name
+      let hostName: string | null = null;
+      if (room.hostId) {
+        const host = await db.query.users.findFirst({
+          where: eq(users.id, room.hostId),
+          columns: { name: true },
+        });
+        hostName = host?.name ?? null;
+      }
+
+      if (!session) return { ...room, hostName, participants: [] };
 
       const participants = await db
         .select({
@@ -561,7 +586,10 @@ export async function getLiveRoomsWithParticipants(adminId: string) {
           ),
         );
 
-      return { ...room, participants };
+      // Exclude host from participants list
+      const filtered = participants.filter((p) => p.userId !== room.hostId);
+
+      return { ...room, hostName, participants: filtered };
     }),
   );
 
