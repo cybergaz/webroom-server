@@ -25,10 +25,11 @@ const accessSecret = new TextEncoder().encode(env.jwt.accessSecret);
 const refreshSecret = new TextEncoder().encode(env.jwt.refreshSecret);
 
 function parseDuration(d: string): number {
-  const match = d.match(/^(\d+)(m|h|d)$/);
+  const match = d.match(/^(\d+)(s|m|h|d)$/);
   if (!match) throw new Error(`Invalid duration: ${d}`);
   const n = parseInt(match[1], 10);
   const unit = match[2];
+  if (unit === 's') return n;
   if (unit === 'm') return n * 60;
   if (unit === 'h') return n * 3600;
   if (unit === 'd') return n * 86400;
@@ -40,11 +41,14 @@ export async function signAccessToken(
   role: UserRole,
 ): Promise<string> {
   const jti = crypto.randomUUID();
+  console.log("jti -> ", jti);
   const claims: Omit<AccessTokenPayload, 'sub'> = {
     role,
     type: 'access',
     jti,
   };
+
+  console.log('Signing access token time: ', `${parseDuration(env.jwt.accessExpiresIn)}s`);
   return new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
@@ -55,6 +59,8 @@ export async function signAccessToken(
 
 export async function signRefreshToken(userId: string): Promise<{ token: string; jti: string; }> {
   const jti = crypto.randomUUID();
+
+  console.log('Signing refresh token time: ', `${parseDuration(env.jwt.refreshExpiresIn)}s`);
   const token = await new SignJWT({ type: 'refresh', jti } satisfies Omit<RefreshTokenPayload, 'sub'>)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)

@@ -173,6 +173,7 @@ interface UserType {
   email: string | null;
   role: UserRole;
   status: 'pending_approval' | 'approved' | 'rejected';
+  requestId: string | null;
 }
 
 async function issueTokens(user: UserType) {
@@ -180,6 +181,9 @@ async function issueTokens(user: UserType) {
     signAccessToken(user.id, user.role),
     signRefreshToken(user.id),
   ]);
+
+  console.log("accessToken : ", accessToken);
+  console.log("newRefresh : ", newRefresh);
 
   const tokenHash = await hashToken(newRefresh);
   await db.insert(refreshTokens).values({
@@ -199,6 +203,7 @@ async function issueTokens(user: UserType) {
       email: user.email,
       role: user.role,
       status: user.status,
+      requestId: user.requestId,
     },
   };
 }

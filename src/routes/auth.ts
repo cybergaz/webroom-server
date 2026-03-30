@@ -83,6 +83,7 @@ export const authRoute = new Elysia({ prefix: '/auth' })
   .post(
     '/refresh',
     async ({ body, set }) => {
+      console.log("refreshing token");
       try {
         return await authService.refresh(body.refreshToken);
       } catch (err: any) {
