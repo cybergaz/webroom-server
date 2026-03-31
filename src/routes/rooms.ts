@@ -2,6 +2,7 @@ import Elysia, { t } from 'elysia'
 import { authPlugin, hostOrAdminPlugin } from '../middleware/auth'
 import * as roomService from '../services/room.service'
 import * as sessionService from '../services/session.service'
+import * as recordingService from '../services/recording.service'
 
 // ─── User routes (any authenticated user) ────────────────────────────────────
 
@@ -51,6 +52,35 @@ const userRoomRoutes = new Elysia({ prefix: '/rooms' })
       return null
     },
     { params: t.Object({ roomId: t.String() }) },
+  )
+
+  // ─── POST /rooms/:roomId/ptt-recordings (upload PTT recording) ──────────────
+  .post(
+    '/:roomId/ptt-recordings',
+    async ({ params, body, user, set }) => {
+      try {
+        const record = await recordingService.savePttRecording({
+          roomId: params.roomId,
+          sessionId: body.sessionId,
+          userId: user.userId,
+          file: body.audio,
+          durationMs: body.durationMs,
+        });
+        set.status = 201;
+        return record;
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    {
+      params: t.Object({ roomId: t.String() }),
+      body: t.Object({
+        audio: t.File(),
+        sessionId: t.String(),
+        durationMs: t.Numeric(),
+      }),
+    },
   )
 
 // ─── Management routes (host, admin, super_admin) ────────────────────────────

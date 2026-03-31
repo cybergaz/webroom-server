@@ -182,6 +182,35 @@ export const speakingEvents = pgTable(
   ],
 );
 
+// ─── PTT Recordings ──────────────────────────────────────────────────────────
+
+export const pttRecordings = pgTable(
+  'ptt_recordings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => roomSessions.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    s3Key: varchar('s3_key', { length: 512 }).notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    fileSizeBytes: integer('file_size_bytes').notNull(),
+    mimeType: varchar('mime_type', { length: 64 }).notNull().default('audio/mp4'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('idx_ptt_recordings_room').on(t.roomId),
+    index('idx_ptt_recordings_session').on(t.sessionId),
+    index('idx_ptt_recordings_user').on(t.userId),
+    index('idx_ptt_recordings_created_at').on(t.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Room = typeof rooms.$inferSelect;
 export type RoomMember = typeof roomMembers.$inferSelect;
@@ -189,3 +218,4 @@ export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type RoomSession = typeof roomSessions.$inferSelect;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type SpeakingEvent = typeof speakingEvents.$inferSelect;
+export type PttRecording = typeof pttRecordings.$inferSelect;

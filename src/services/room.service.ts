@@ -98,12 +98,15 @@ export async function getRoom(roomId: string, userId: string) {
     with: { user: { columns: { id: true, name: true } } },
   });
 
+  // Get active session ID (if room is live)
+  const activeSession = await sessionService.getActiveSession(roomId);
 
   return {
     id: room.id,
     name: room.name,
     description: room.description,
     status: room.status,
+    sessionId: activeSession?.id ?? null,
     getstreamCallId: room.getstreamCallId,
     getstreamCallType: env.getstream.callType,
     isHost,
@@ -156,6 +159,7 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
     roomId: room.id,
     name: room.name,
     status: 'live' as const,
+    sessionId: session.id,
     getstreamCallId: room.getstreamCallId,
     getstreamCallType: env.getstream.callType,
     getstreamToken: generateGetstreamToken(actorId),
@@ -214,6 +218,7 @@ export async function joinRoom(roomId: string, userId: string) {
   if (session) await sessionService.recordParticipantJoin(session.id, userId);
 
   return {
+    sessionId: session?.id,
     getstreamCallId: room.getstreamCallId,
     getstreamCallType: env.getstream.callType,
     getstreamToken: generateGetstreamToken(userId),

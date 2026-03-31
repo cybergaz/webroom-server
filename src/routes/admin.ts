@@ -3,6 +3,7 @@ import { adminPlugin } from '../middleware/auth';
 import * as adminService from '../services/admin.service';
 import * as sessionService from '../services/session.service';
 import * as roomService from '../services/room.service';
+import * as recordingService from '../services/recording.service';
 
 export const adminRoute = new Elysia({ prefix: '/admin' })
   .use(adminPlugin)
@@ -397,6 +398,41 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
       }
     },
     { params: t.Object({ roomId: t.String() }) },
+  )
+
+  // ─── PTT Recordings ──────────────────────────────────────────────────────
+
+  .get(
+    '/ptt-recordings',
+    async ({ query }) => {
+      return recordingService.listPttRecordings({
+        roomId: query.roomId || undefined,
+        userId: query.userId || undefined,
+        page: query.page ? parseInt(query.page as string, 10) : 1,
+        limit: query.limit ? parseInt(query.limit as string, 10) : 20,
+      });
+    },
+    {
+      query: t.Object({
+        roomId: t.Optional(t.String()),
+        userId: t.Optional(t.String()),
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+      }),
+    },
+  )
+
+  .get(
+    '/ptt-recordings/:recordingId/url',
+    async ({ params, set }) => {
+      try {
+        return await recordingService.getPttRecordingUrl(params.recordingId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ recordingId: t.String() }) },
   )
 
   // ─── Room Activity (live rooms with active participants) ──────────────────

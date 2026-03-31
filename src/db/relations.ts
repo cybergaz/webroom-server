@@ -7,6 +7,7 @@ import {
   roomSessions,
   sessionParticipants,
   speakingEvents,
+  pttRecordings,
 } from './schema'
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -16,6 +17,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   refreshTokens: many(refreshTokens),
   sessionParticipations: many(sessionParticipants),
   speakingEvents: many(speakingEvents),
+  pttRecordings: many(pttRecordings),
 }))
 
 export const roomsRelations = relations(rooms, ({ one, many }) => ({
@@ -23,6 +25,7 @@ export const roomsRelations = relations(rooms, ({ one, many }) => ({
   host: one(users, { fields: [rooms.hostId], references: [users.id], relationName: 'host' }),
   members: many(roomMembers),
   sessions: many(roomSessions),
+  pttRecordings: many(pttRecordings),
 }))
 
 export const roomMembersRelations = relations(roomMembers, ({ one }) => ({
@@ -38,6 +41,7 @@ export const roomSessionsRelations = relations(roomSessions, ({ one, many }) => 
   room: one(rooms, { fields: [roomSessions.roomId], references: [rooms.id] }),
   participants: many(sessionParticipants),
   speakingEvents: many(speakingEvents),
+  pttRecordings: many(pttRecordings),
 }))
 
 export const sessionParticipantsRelations = relations(sessionParticipants, ({ one }) => ({
@@ -54,4 +58,10 @@ export const speakingEventsRelations = relations(speakingEvents, ({ one }) => ({
     references: [roomSessions.id],
   }),
   user: one(users, { fields: [speakingEvents.userId], references: [users.id] }),
+}))
+
+export const pttRecordingsRelations = relations(pttRecordings, ({ one }) => ({
+  room: one(rooms, { fields: [pttRecordings.roomId], references: [rooms.id] }),
+  session: one(roomSessions, { fields: [pttRecordings.sessionId], references: [roomSessions.id] }),
+  user: one(users, { fields: [pttRecordings.userId], references: [users.id] }),
 }))

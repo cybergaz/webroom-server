@@ -29,4 +29,12 @@ export const env = {
     apiSecret: required('GETSTREAM_API_SECRET'),
     callType: process.env.GETSTREAM_CALL_TYPE ?? 'audio_room',
   },
+
+  s3: {
+    bucket: required('S3_BUCKET'),
+    region: process.env.S3_REGION ?? 'us-east-1',
+    accessKeyId: required('S3_ACCESS_KEY_ID'),
+    secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
+    endpoint: process.env.S3_ENDPOINT || undefined,
+  },
 } as const;
