@@ -182,8 +182,8 @@ async function issueTokens(user: UserType) {
     signRefreshToken(user.id),
   ]);
 
-  console.log("accessToken : ", accessToken);
-  console.log("newRefresh : ", newRefresh);
+  // console.log("accessToken : ", accessToken);
+  // console.log("newRefresh : ", newRefresh);
 
   const tokenHash = await hashToken(newRefresh);
   await db.insert(refreshTokens).values({

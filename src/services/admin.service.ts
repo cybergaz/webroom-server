@@ -146,16 +146,21 @@ export async function listHosts(adminId: string) {
     .orderBy(users.name);
 }
 
-export async function updateHost(hostId: string, adminId: string, data: { name?: string; email?: string; }) {
+export async function updateHost(hostId: string, adminId: string, data: { name?: string; email?: string; password?: string; }) {
   const [host] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, hostId), eq(users.role, 'host'), isAdoptedBy(adminId)))
     .limit(1);
   if (!host) throw err(404, 'Host not found');
 
+  const updateData: Record<string, unknown> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.email !== undefined) updateData.email = data.email;
+  if (data.password) updateData.passwordHash = await Bun.password.hash(data.password);
+
   const [updated] = await db
     .update(users)
-    .set(data)
+    .set(updateData)
     .where(eq(users.id, hostId))
     .returning({ id: users.id, name: users.name, email: users.email });
 

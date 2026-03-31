@@ -41,14 +41,14 @@ export async function signAccessToken(
   role: UserRole,
 ): Promise<string> {
   const jti = crypto.randomUUID();
-  console.log("jti -> ", jti);
+  // console.log("jti -> ", jti);
   const claims: Omit<AccessTokenPayload, 'sub'> = {
     role,
     type: 'access',
     jti,
   };
 
-  console.log('Signing access token time: ', `${parseDuration(env.jwt.accessExpiresIn)}s`);
+  // console.log('Signing access token time: ', `${parseDuration(env.jwt.accessExpiresIn)}s`);
   return new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
@@ -60,7 +60,7 @@ export async function signAccessToken(
 export async function signRefreshToken(userId: string): Promise<{ token: string; jti: string; }> {
   const jti = crypto.randomUUID();
 
-  console.log('Signing refresh token time: ', `${parseDuration(env.jwt.refreshExpiresIn)}s`);
+  // console.log('Signing refresh token time: ', `${parseDuration(env.jwt.refreshExpiresIn)}s`);
   const token = await new SignJWT({ type: 'refresh', jti } satisfies Omit<RefreshTokenPayload, 'sub'>)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
