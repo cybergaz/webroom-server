@@ -426,11 +426,8 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     '/ptt-recordings/:recordingId/url',
     async ({ params, set }) => {
       try {
-        const result = await recordingService.getPttRecordingUrl(params.recordingId);
-        console.log('[ptt-url-route] result:', JSON.stringify(result));
-        return result;
+        return await recordingService.getPttRecordingUrl(params.recordingId);
       } catch (err: any) {
-        console.error('[ptt-url-route] error:', err);
         set.status = err.status ?? 500;
         return { error: err.message };
       }
