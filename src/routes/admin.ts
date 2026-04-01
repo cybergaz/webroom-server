@@ -435,6 +435,30 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     { params: t.Object({ recordingId: t.String() }) },
   )
 
+  // ─── Attendance ──────────────────────────────────────────────────────────
+
+  .get(
+    '/attendance',
+    async ({ query, user }) => {
+      const date = query.date || new Date().toISOString().slice(0, 10);
+      const result = await adminService.getAttendance(user.userId, {
+        date,
+        search: query.search || undefined,
+        page: query.page ? parseInt(query.page, 10) : 1,
+        limit: query.limit ? parseInt(query.limit, 10) : 20,
+      });
+      return { ...result, date };
+    },
+    {
+      query: t.Object({
+        date: t.Optional(t.String()),
+        search: t.Optional(t.String()),
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+      }),
+    },
+  )
+
   // ─── Room Activity (live rooms with active participants) ──────────────────
 
   .get('/room-activity', async ({ user }) => {

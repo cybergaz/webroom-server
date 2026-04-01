@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, or } from 'drizzle-orm';
+import { and, eq, exists, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
 import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
@@ -599,6 +599,90 @@ export async function getLiveRoomsWithParticipants(adminId: string) {
   );
 
   return result;
+}
+
+// ─── Attendance ─────────────────────────────────────────────────────────────
+
+export async function getAttendance(
+  adminId: string,
+  opts: { date: string; search?: string; page?: number; limit?: number },
+) {
+  const { date, search, page = 1, limit = 20 } = opts;
+  const dayStart = `${date}T00:00:00.000Z`;
+  const dayEnd = `${date}T23:59:59.999Z`;
+  const offset = (page - 1) * limit;
+
+  // Build WHERE conditions
+  const conditions = [
+    or(eq(users.role, 'user'), eq(users.role, 'host')),
+    eq(users.status, 'approved'),
+  ];
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(
+      or(
+        ilike(users.name, pattern),
+        ilike(users.phone, pattern),
+        ilike(users.email, pattern),
+      )!,
+    );
+  }
+
+  // Count total matching rows (without pagination)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(DISTINCT ${users.id})` })
+    .from(users)
+    .innerJoin(
+      adminUserAdoptions,
+      and(eq(adminUserAdoptions.userId, users.id), eq(adminUserAdoptions.adminId, adminId)),
+    )
+    .where(and(...conditions));
+
+  // Main query with pagination
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      phone: users.phone,
+      email: users.email,
+      role: users.role,
+      firstJoinAt: sql<string | null>`
+        MIN(CASE
+          WHEN ${sessionParticipants.joinedAt} >= ${dayStart}::timestamptz
+           AND ${sessionParticipants.joinedAt} <= ${dayEnd}::timestamptz
+          THEN ${sessionParticipants.joinedAt}
+        END)
+      `.as('first_join_at'),
+    })
+    .from(users)
+    .innerJoin(
+      adminUserAdoptions,
+      and(eq(adminUserAdoptions.userId, users.id), eq(adminUserAdoptions.adminId, adminId)),
+    )
+    .leftJoin(
+      sessionParticipants,
+      eq(sessionParticipants.userId, users.id),
+    )
+    .where(and(...conditions))
+    .groupBy(users.id, users.name, users.phone, users.email, users.role)
+    .orderBy(users.name)
+    .limit(limit)
+    .offset(offset);
+
+  return {
+    data: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      email: r.email,
+      role: r.role,
+      present: r.firstJoinAt !== null,
+      firstJoinAt: r.firstJoinAt,
+    })),
+    total: Number(count),
+    page,
+    limit,
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
