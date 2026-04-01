@@ -96,5 +96,6 @@ export async function getPttRecordingUrl(recordingId: string) {
   }
 
   const url = await getPresignedUrl(record.s3Key);
+  console.log('[getPttRecordingUrl] s3Key:', record.s3Key, 'url type:', typeof url, 'url length:', url?.length);
   return { url };
 }
