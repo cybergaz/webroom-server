@@ -71,6 +71,13 @@
       "when": 1774965715596,
       "tag": "0009_careful_excalibur",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775045003810,
+      "tag": "0010_strong_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import * as adminService from '../services/admin.service';
 import * as sessionService from '../services/session.service';
 import * as roomService from '../services/room.service';
 import * as recordingService from '../services/recording.service';
+import * as transcriptionService from '../services/transcription.service';
 
 export const adminRoute = new Elysia({ prefix: '/admin' })
   .use(adminPlugin)
@@ -464,4 +465,34 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
   .get('/room-activity', async ({ user }) => {
     const liveRooms = await adminService.getLiveRoomsWithParticipants(user.userId);
     return { rooms: liveRooms };
-  });
+  })
+
+  // ─── Transcriptions ────────────────────────────────────────────────────────
+
+  .get(
+    '/rooms/:roomId/transcriptions',
+    async ({ params, set }) => {
+      try {
+        const sessions = await transcriptionService.getRoomSessionTranscriptions(params.roomId);
+        return { sessions };
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ roomId: t.String() }) },
+  )
+
+  .get(
+    '/transcriptions/:roomId/:sessionId',
+    async ({ params, set }) => {
+      try {
+        const transcriptions = await transcriptionService.getSessionTranscriptions(params.sessionId);
+        return { transcriptions };
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ roomId: t.String(), sessionId: t.String() }) },
+  );

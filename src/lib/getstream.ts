@@ -144,3 +144,40 @@ export async function listCallRecordings(callId: string) {
   const response = await call.listRecordings();
   return response.recordings;
 }
+
+/**
+ * Start transcription on a call. Called alongside startCallRecording
+ * when the host confirms ready. Language set to Hindi for primary user base.
+ * Enables closed captions so Flutter clients receive real-time caption events.
+ */
+export async function startCallTranscription(callId: string) {
+  const call = getGetstreamCall(callId);
+  await call.update({
+    settings_override: {
+      transcription: {
+        mode: 'available',
+        language: 'en',
+        closed_caption_mode: 'available',
+      },
+    },
+  });
+  await call.startTranscription({ language: 'en', enable_closed_captions: true });
+}
+
+/**
+ * Stop transcription on a call.
+ */
+export async function stopCallTranscription(callId: string) {
+  const call = getGetstreamCall(callId);
+  await call.stopTranscription();
+}
+
+/**
+ * List all transcriptions for a call across all sessions.
+ * Returns transcription entries with signed download URLs for JSONL files.
+ */
+export async function listCallTranscriptions(callId: string) {
+  const call = getGetstreamCall(callId);
+  const response = await call.listTranscriptions();
+  return response.transcriptions;
+}

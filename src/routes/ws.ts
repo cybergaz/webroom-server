@@ -12,6 +12,7 @@
  *   { "event": "room.leave",     "payload": { "roomId": "..." } }  (informational)
  *   { "event": "speaking.start", "payload": { "roomId": "..." } }
  *   { "event": "speaking.end",   "payload": { "roomId": "..." } }
+ *   { "event": "transcription.caption", "payload": { "roomId", "text", "startTime", "endTime" } }
  */
 
 import Elysia from 'elysia';
@@ -39,6 +40,29 @@ async function relaySpeakingEvent(event: 'speaking.start' | 'speaking.end', room
     roomName: room.name,
     userId,
     userName: user?.name ?? 'Unknown',
+  });
+}
+
+async function relayTranscriptionCaption(roomId: string, userId: string, text: string, startTime: string, endTime: string): Promise<void> {
+  const room = await db.query.rooms.findFirst({
+    where: eq(rooms.id, roomId),
+    columns: { createdBy: true, name: true },
+  });
+  if (!room) return;
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { name: true },
+  });
+
+  await sendToUser(room.createdBy, 'transcription.caption', {
+    roomId,
+    roomName: room.name,
+    userId,
+    userName: user?.name ?? 'Unknown',
+    text,
+    startTime,
+    endTime,
   });
 }
 
@@ -146,6 +170,14 @@ export const wsRoute = new Elysia()
         if (msg.event === 'speaking.end') {
           const roomId = msg.payload?.roomId;
           if (roomId && userId) relaySpeakingEvent('speaking.end', roomId, userId);
+          return;
+        }
+
+        if (msg.event === 'transcription.caption') {
+          const { roomId, text, startTime, endTime } = msg.payload ?? {};
+          if (roomId && userId && text) {
+            relayTranscriptionCaption(roomId, userId, text, startTime ?? '', endTime ?? '');
+          }
           return;
         }
 
