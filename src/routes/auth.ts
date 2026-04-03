@@ -2,6 +2,20 @@ import Elysia, { t } from 'elysia';
 import { authPlugin } from '../middleware/auth';
 import * as authService from '../services/auth.service';
 
+function parseDeviceName(ua?: string, deviceHeader?: string, appVersion?: string): string {
+  // Prefer explicit X-Device-Name header (sent by mobile apps)
+  let device = deviceHeader || '';
+  if (!device && ua) {
+    if (/android/i.test(ua)) device = 'Android';
+    else if (/iphone|ipad|ipod/i.test(ua)) device = 'iOS';
+    else if (/windows/i.test(ua)) device = 'Windows';
+    else if (/macintosh|mac os/i.test(ua)) device = 'Mac';
+    else if (/linux/i.test(ua)) device = 'Linux';
+  }
+  if (!device) device = 'Unknown';
+  return appVersion ? `${device} (${appVersion})` : device;
+}
+
 export const authRoute = new Elysia({ prefix: '/auth' })
   .onError(({ error, set, path }) => {
     const err = error as any;
@@ -59,11 +73,17 @@ export const authRoute = new Elysia({ prefix: '/auth' })
   // ─── POST /auth/login ───────────────────────────────────────────────────────
   .post(
     '/login',
-    async ({ body, set }) => {
+    async ({ body, set, headers }) => {
       try {
+        console.log('[AUTH] user-agent:', headers['user-agent']);
+        console.log('[AUTH] x-device-name:', headers['x-device-name']);
+        console.log('[AUTH] x-app-version:', headers['x-app-version']);
+        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name'], headers['x-app-version']);
+        console.log('[AUTH] Parsed deviceName:', deviceName);
         return await authService.login(
           { phone: body.phone, email: body.email },
           body.password,
+          deviceName,
         );
       } catch (err: any) {
         set.status = err.status ?? 500;
@@ -82,10 +102,11 @@ export const authRoute = new Elysia({ prefix: '/auth' })
   // ─── POST /auth/refresh ─────────────────────────────────────────────────────
   .post(
     '/refresh',
-    async ({ body, set }) => {
+    async ({ body, set, headers }) => {
       console.log("refreshing token");
       try {
-        return await authService.refresh(body.refreshToken);
+        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name'], headers['x-app-version']);
+        return await authService.refresh(body.refreshToken, deviceName);
       } catch (err: any) {
         set.status = err.status ?? 500;
         return { error: err.message };

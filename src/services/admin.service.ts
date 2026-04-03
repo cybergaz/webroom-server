@@ -1,4 +1,4 @@
-import { and, eq, exists, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, exists, ilike, isNull, or, sql, desc } from 'drizzle-orm';
 import { db } from '../db/client';
 import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
 import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
@@ -136,12 +136,29 @@ export async function createHost(
 }
 
 export async function listHosts(adminId: string) {
+  const latestToken = db
+    .select({
+      userId: refreshTokens.userId,
+      deviceName: sql<string | null>`(
+        SELECT rt2.device_name FROM refresh_tokens rt2
+        WHERE rt2.user_id = ${refreshTokens.userId}
+        ORDER BY rt2.created_at DESC
+        LIMIT 1
+      )`.as('device_name'),
+    })
+    .from(refreshTokens)
+    .groupBy(refreshTokens.userId)
+    .as('latest_token');
+
   return db.select({
     id: users.id, requestId: users.requestId, name: users.name, phone: users.phone,
     email: users.email, role: users.role, status: users.status,
     createdByUserId: users.createdByUserId, createdAt: users.createdAt,
+    lastSeenAt: users.lastSeenAt,
+    deviceName: latestToken.deviceName,
   })
     .from(users)
+    .leftJoin(latestToken, eq(latestToken.userId, users.id))
     .where(and(eq(users.role, 'host'), isAdoptedBy(adminId)))
     .orderBy(users.name);
 }
@@ -313,7 +330,22 @@ export async function createUser(
 }
 
 export async function listUsers(adminId: string) {
-  return db.select({
+  // Subquery: most recent refresh token per user
+  const latestToken = db
+    .select({
+      userId: refreshTokens.userId,
+      deviceName: sql<string | null>`(
+        SELECT rt2.device_name FROM refresh_tokens rt2
+        WHERE rt2.user_id = ${refreshTokens.userId}
+        ORDER BY rt2.created_at DESC
+        LIMIT 1
+      )`.as('device_name'),
+    })
+    .from(refreshTokens)
+    .groupBy(refreshTokens.userId)
+    .as('latest_token');
+
+  const result = await db.select({
     id: users.id,
     requestId: users.requestId,
     name: users.name,
@@ -323,10 +355,15 @@ export async function listUsers(adminId: string) {
     status: users.status,
     createdByUserId: users.createdByUserId,
     createdAt: users.createdAt,
+    lastSeenAt: users.lastSeenAt,
+    deviceName: latestToken.deviceName,
   })
     .from(users)
+    .leftJoin(latestToken, eq(latestToken.userId, users.id))
     .where(and(eq(users.role, 'user'), isAdoptedBy(adminId)))
     .orderBy(users.name);
+  console.log('[ADMIN] listUsers result sample:', result.length > 0 ? { deviceName: result[0].deviceName, lastSeenAt: result[0].lastSeenAt } : 'no users');
+  return result;
 }
 
 export async function updateUser(userId: string, adminId: string, data: { name?: string; email?: string; }) {

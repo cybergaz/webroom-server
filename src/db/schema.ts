@@ -32,6 +32,7 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   },
   (t) => [
     index('idx_users_phone').on(t.phone),

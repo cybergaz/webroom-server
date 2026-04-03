@@ -16,12 +16,26 @@
  */
 
 import Elysia from 'elysia';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { verifyWsToken, type UserRole } from '../lib/jwt';
 import { connections, get_ws_data, set_ws_data, unregisterConnection, sendToUser, startHostGracePeriod, cancelHostGracePeriod, WebSocketData } from '../lib/ws-manager';
 import { db } from '../db/client';
 import { rooms, users } from '../db/schema';
 import { ElysiaWS } from 'elysia/dist/ws';
+
+/** Update lastSeenAt only if it's null or older than 5 minutes (fire-and-forget). */
+function touchLastSeen(userId: string) {
+  db.update(users)
+    .set({ lastSeenAt: new Date() })
+    .where(and(
+      eq(users.id, userId),
+      or(
+        isNull(users.lastSeenAt),
+        sql`${users.lastSeenAt} < NOW() - INTERVAL '5 minutes'`,
+      ),
+    ))
+    .catch(() => {});
+}
 
 async function relaySpeakingEvent(event: 'speaking.start' | 'speaking.end', roomId: string, userId: string): Promise<void> {
   const room = await db.query.rooms.findFirst({
@@ -135,6 +149,7 @@ export const wsRoute = new Elysia()
       set_ws_data(ws, data);
 
       connections.set(payload!.sub, { ws: ws });
+      touchLastSeen(payload!.sub);
 
       // If this user is a host with a pending grace timer, cancel it
       if (payload!.role === 'host' || payload!.role === 'admin' || payload!.role === 'super_admin') {
@@ -153,6 +168,7 @@ export const wsRoute = new Elysia()
 
         if (msg.event === 'ws.ping') {
           ws.send(JSON.stringify({ event: 'ws.pong', payload: {}, timestamp: new Date().toISOString() }));
+          if (userId) touchLastSeen(userId);
           return;
         }
 
