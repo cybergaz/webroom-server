@@ -88,7 +88,7 @@ export async function checkStatus(requestId: string) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export async function login(identifier: { phone?: string; email?: string; }, password: string, deviceName?: string, deviceId?: string) {
+export async function login(identifier: { phone?: string; email?: string; }, password: string, deviceName?: string, deviceId?: string, appVersion?: string) {
   if (!identifier.phone && !identifier.email) {
     throw Object.assign(new Error('Phone or email is required'), { status: 400 });
   }
@@ -165,12 +165,12 @@ export async function login(identifier: { phone?: string; email?: string; }, pas
     }
   }
 
-  return issueTokens(user, deviceName);
+  return issueTokens(user, deviceName, appVersion);
 }
 
 // ─── Refresh ──────────────────────────────────────────────────────────────────
 
-export async function refresh(refreshToken: string, deviceName?: string) {
+export async function refresh(refreshToken: string, deviceName?: string, appVersion?: string) {
   const payload = await verifyRefreshToken(refreshToken);
   if (!payload) throw Object.assign(new Error('Invalid or expired refresh token'), { status: 403 });
 
@@ -192,7 +192,7 @@ export async function refresh(refreshToken: string, deviceName?: string) {
   await db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash));
 
   // Use fresh device info from request headers; fall back to old token's value
-  return issueTokens(user satisfies UserType, deviceName || stored.device_name || undefined);
+  return issueTokens(user satisfies UserType, deviceName || stored.device_name || undefined, appVersion);
 }
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
@@ -229,14 +229,16 @@ interface UserType {
   requestId: string | null;
 }
 
-async function issueTokens(user: UserType, deviceName?: string) {
+async function issueTokens(user: UserType, deviceName?: string, appVersion?: string) {
   const [accessToken, { token: newRefresh }] = await Promise.all([
     signAccessToken(user.id, user.role),
     signRefreshToken(user.id),
   ]);
 
   const tokenHash = await hashToken(newRefresh);
-  console.log('[AUTH] issueTokens deviceName:', deviceName);
+  const userUpdate: Record<string, unknown> = { lastSeenAt: new Date() };
+  if (appVersion) userUpdate.appVersion = appVersion;
+
   await Promise.all([
     db.insert(refreshTokens).values({
       userId: user.id,
@@ -244,9 +246,8 @@ async function issueTokens(user: UserType, deviceName?: string) {
       device_name: deviceName ?? null,
       expiresAt: refreshTokenExpiresAt(),
     }),
-    db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, user.id)),
+    db.update(users).set(userUpdate).where(eq(users.id, user.id)),
   ]);
-  console.log('[AUTH] Refresh token inserted with device_name:', deviceName ?? null);
 
   return {
     accessToken,

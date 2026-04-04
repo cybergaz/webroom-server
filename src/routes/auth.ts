@@ -78,11 +78,13 @@ export const authRoute = new Elysia({ prefix: '/auth' })
       try {
         const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name']);
         const deviceId = headers['x-device-id'] || undefined;
+        const appVersion = headers['x-app-version'] || undefined;
         return await authService.login(
           { phone: body.phone, email: body.email },
           body.password,
           deviceName,
           deviceId,
+          appVersion,
         );
       } catch (err: any) {
         set.status = err.status ?? 500;
@@ -105,7 +107,8 @@ export const authRoute = new Elysia({ prefix: '/auth' })
       console.log("refreshing token");
       try {
         const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name']);
-        return await authService.refresh(body.refreshToken, deviceName);
+        const appVersion = headers['x-app-version'] || undefined;
+        return await authService.refresh(body.refreshToken, deviceName, appVersion);
       } catch (err: any) {
         set.status = err.status ?? 500;
         return { error: err.message };

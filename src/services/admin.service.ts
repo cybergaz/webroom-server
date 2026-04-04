@@ -159,6 +159,7 @@ export async function listHosts(adminId: string) {
     lockedDeviceId: users.lockedDeviceId,
     lockedDeviceName: users.lockedDeviceName,
     allowDeviceChange: users.allowDeviceChange,
+    appVersion: users.appVersion,
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
@@ -363,6 +364,7 @@ export async function listUsers(adminId: string) {
     lockedDeviceId: users.lockedDeviceId,
     lockedDeviceName: users.lockedDeviceName,
     allowDeviceChange: users.allowDeviceChange,
+    appVersion: users.appVersion,
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
