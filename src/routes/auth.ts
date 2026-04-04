@@ -2,18 +2,19 @@ import Elysia, { t } from 'elysia';
 import { authPlugin } from '../middleware/auth';
 import * as authService from '../services/auth.service';
 
-function parseDeviceName(ua?: string, deviceHeader?: string, appVersion?: string): string {
-  // Prefer explicit X-Device-Name header (sent by mobile apps)
-  let device = deviceHeader || '';
-  if (!device && ua) {
-    if (/android/i.test(ua)) device = 'Android';
-    else if (/iphone|ipad|ipod/i.test(ua)) device = 'iOS';
-    else if (/windows/i.test(ua)) device = 'Windows';
-    else if (/macintosh|mac os/i.test(ua)) device = 'Mac';
-    else if (/linux/i.test(ua)) device = 'Linux';
+function parseDeviceName(ua?: string, deviceHeader?: string): string {
+  // Prefer explicit X-Device-Name header (sent by mobile apps — includes model info)
+  if (deviceHeader) return deviceHeader;
+
+  // Fallback: parse User-Agent (browser / admin panel requests)
+  if (ua) {
+    if (/android/i.test(ua)) return 'Android';
+    if (/iphone|ipad|ipod/i.test(ua)) return 'iOS';
+    if (/windows/i.test(ua)) return 'Windows';
+    if (/macintosh|mac os/i.test(ua)) return 'Mac';
+    if (/linux/i.test(ua)) return 'Linux';
   }
-  if (!device) device = 'Unknown';
-  return appVersion ? `${device} (${appVersion})` : device;
+  return 'Unknown';
 }
 
 export const authRoute = new Elysia({ prefix: '/auth' })
@@ -75,19 +76,17 @@ export const authRoute = new Elysia({ prefix: '/auth' })
     '/login',
     async ({ body, set, headers }) => {
       try {
-        console.log('[AUTH] user-agent:', headers['user-agent']);
-        console.log('[AUTH] x-device-name:', headers['x-device-name']);
-        console.log('[AUTH] x-app-version:', headers['x-app-version']);
-        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name'], headers['x-app-version']);
-        console.log('[AUTH] Parsed deviceName:', deviceName);
+        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name']);
+        const deviceId = headers['x-device-id'] || undefined;
         return await authService.login(
           { phone: body.phone, email: body.email },
           body.password,
           deviceName,
+          deviceId,
         );
       } catch (err: any) {
         set.status = err.status ?? 500;
-        return { error: err.message };
+        return { error: err.message, code: (err as any).code };
       }
     },
     {
@@ -105,7 +104,7 @@ export const authRoute = new Elysia({ prefix: '/auth' })
     async ({ body, set, headers }) => {
       console.log("refreshing token");
       try {
-        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name'], headers['x-app-version']);
+        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name']);
         return await authService.refresh(body.refreshToken, deviceName);
       } catch (err: any) {
         set.status = err.status ?? 500;

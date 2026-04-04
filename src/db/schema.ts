@@ -33,6 +33,9 @@ export const users = pgTable(
     }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    lockedDeviceId: varchar('locked_device_id', { length: 255 }),
+    lockedDeviceName: varchar('locked_device_name', { length: 255 }),
+    allowDeviceChange: boolean('allow_device_change').default(false).notNull(),
   },
   (t) => [
     index('idx_users_phone').on(t.phone),

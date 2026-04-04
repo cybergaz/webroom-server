@@ -13,6 +13,7 @@
  *  - user.approved        (pending user notified on check-status screen)
  *  - user.rejected        (pending user notified on check-status screen)
  *  - user.force_logout    (admin forced a user out)
+ *  - user.session_replaced (logged out due to new login on another device)
  *  - ws.pong              (heartbeat response)
  *
  * For horizontal scaling: Redis pub/sub routes events across instances.

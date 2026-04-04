@@ -12,6 +12,7 @@ import {
 } from '../lib/jwt';
 import { generateGetstreamToken } from '../lib/getstream';
 import { blacklistToken } from '../lib/redis';
+import { sendToUser } from '../lib/ws-manager';
 import { customAlphabet } from 'nanoid';
 
 // ─── Request ID generator ────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ export async function checkStatus(requestId: string) {
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export async function login(identifier: { phone?: string; email?: string; }, password: string, deviceName?: string) {
+export async function login(identifier: { phone?: string; email?: string; }, password: string, deviceName?: string, deviceId?: string) {
   if (!identifier.phone && !identifier.email) {
     throw Object.assign(new Error('Phone or email is required'), { status: 400 });
   }
@@ -112,6 +113,57 @@ export async function login(identifier: { phone?: string; email?: string; }, pas
 
   const valid = await Bun.password.verify(password, user.passwordHash);
   if (!valid) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+
+  // ─── Device lock enforcement for user/host roles ───────────────────────────
+  const isRestricted = user.role === 'user' || user.role === 'host';
+
+  if (isRestricted) {
+    if (!deviceId) {
+      throw Object.assign(new Error('Device ID is required'), { status: 400 });
+    }
+
+    if (user.lockedDeviceId) {
+      // User already has a locked device
+      if (user.lockedDeviceId !== deviceId) {
+        // Trying to login from a different device
+        if (!user.allowDeviceChange) {
+          throw Object.assign(
+            new Error(`Login denied. You can only login from your registered device (${user.lockedDeviceName || 'Unknown'}). Contact your administrator to change your device.`),
+            { status: 403, code: 'DEVICE_NOT_ALLOWED' },
+          );
+        }
+        // Admin has allowed a device change — lock to new device, reset flag
+        await db.update(users).set({
+          lockedDeviceId: deviceId,
+          lockedDeviceName: deviceName || null,
+          allowDeviceChange: false,
+        }).where(eq(users.id, user.id));
+      }
+      // else: same device, proceed normally
+    } else {
+      // First login — register this device
+      await db.update(users).set({
+        lockedDeviceId: deviceId,
+        lockedDeviceName: deviceName || null,
+      }).where(eq(users.id, user.id));
+    }
+
+    // Single-session enforcement: invalidate all existing sessions
+    const existingTokens = await db.query.refreshTokens.findMany({
+      where: eq(refreshTokens.userId, user.id),
+      columns: { id: true, device_name: true },
+    });
+
+    if (existingTokens.length > 0) {
+      await db.delete(refreshTokens).where(eq(refreshTokens.userId, user.id));
+      // Notify old device that it was logged out
+      await sendToUser(user.id, 'user.session_replaced', {
+        userId: user.id,
+        newDeviceName: deviceName || 'Unknown',
+        reason: `You have been logged out because a new login was detected on ${deviceName || 'another device'}.`,
+      });
+    }
+  }
 
   return issueTokens(user, deviceName);
 }

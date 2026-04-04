@@ -156,6 +156,9 @@ export async function listHosts(adminId: string) {
     createdByUserId: users.createdByUserId, createdAt: users.createdAt,
     lastSeenAt: users.lastSeenAt,
     deviceName: latestToken.deviceName,
+    lockedDeviceId: users.lockedDeviceId,
+    lockedDeviceName: users.lockedDeviceName,
+    allowDeviceChange: users.allowDeviceChange,
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
@@ -357,6 +360,9 @@ export async function listUsers(adminId: string) {
     createdAt: users.createdAt,
     lastSeenAt: users.lastSeenAt,
     deviceName: latestToken.deviceName,
+    lockedDeviceId: users.lockedDeviceId,
+    lockedDeviceName: users.lockedDeviceName,
+    allowDeviceChange: users.allowDeviceChange,
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
@@ -489,6 +495,38 @@ export async function rejectUser(userId: string) {
     .returning({ id: users.id, status: users.status });
 
   await sendToUser(userId, 'user.rejected', { userId });
+
+  return updated;
+}
+
+export async function allowDeviceChange(userId: string, adminId: string) {
+  const [user] = await db.select({ id: users.id, role: users.role })
+    .from(users)
+    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
+    .limit(1);
+  if (!user) throw err(404, 'User not found');
+
+  const [updated] = await db
+    .update(users)
+    .set({ allowDeviceChange: true })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id, allowDeviceChange: users.allowDeviceChange });
+
+  return updated;
+}
+
+export async function resetDeviceLock(userId: string, adminId: string) {
+  const [user] = await db.select({ id: users.id, role: users.role })
+    .from(users)
+    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
+    .limit(1);
+  if (!user) throw err(404, 'User not found');
+
+  const [updated] = await db
+    .update(users)
+    .set({ lockedDeviceId: null, lockedDeviceName: null, allowDeviceChange: false })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id });
 
   return updated;
 }

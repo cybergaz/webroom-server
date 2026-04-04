@@ -125,6 +125,32 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     { params: t.Object({ hostId: t.String() }) },
   )
 
+  .post(
+    '/hosts/:hostId/allow-device-change',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.allowDeviceChange(params.hostId, user.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
+  .post(
+    '/hosts/:hostId/reset-device-lock',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.resetDeviceLock(params.hostId, user.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ hostId: t.String() }) },
+  )
+
   // ─── User management ────────────────────────────────────────────────────────
 
   .get(
@@ -179,6 +205,32 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     async ({ params, user, set }) => {
       try {
         return await adminService.forceLogoutUser(params.userId, user.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .post(
+    '/users/:userId/allow-device-change',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.allowDeviceChange(params.userId, user.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
+
+  .post(
+    '/users/:userId/reset-device-lock',
+    async ({ params, user, set }) => {
+      try {
+        return await adminService.resetDeviceLock(params.userId, user.userId);
       } catch (err: any) {
         set.status = err.status ?? 500;
         return { error: err.message };
