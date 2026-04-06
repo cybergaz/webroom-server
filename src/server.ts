@@ -17,7 +17,7 @@ async function bootstrap() {
       cors({
         origin: true, // tighten in production
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Name', 'X-App-Version'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Name', 'X-App-Version', 'X-Device-Id'],
         credentials: true,
       }),
     )

@@ -92,6 +92,13 @@
       "when": 1775297343269,
       "tag": "0012_gigantic_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775302731890,
+      "tag": "0013_nostalgic_victor_mancha",
+      "breakpoints": true
     }
   ]
 }
