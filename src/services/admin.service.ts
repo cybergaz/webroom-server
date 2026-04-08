@@ -365,6 +365,7 @@ export async function listUsers(adminId: string) {
     lockedDeviceName: users.lockedDeviceName,
     allowDeviceChange: users.allowDeviceChange,
     appVersion: users.appVersion,
+    assignedRoomCount: sql<number>`(SELECT COUNT(*) FROM ${roomMembers} WHERE ${roomMembers.userId} = ${users.id})`.mapWith(Number),
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
