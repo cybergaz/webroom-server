@@ -160,6 +160,11 @@ export async function listHosts(adminId: string) {
     lockedDeviceName: users.lockedDeviceName,
     allowDeviceChange: users.allowDeviceChange,
     appVersion: users.appVersion,
+    assignedRoomCount: sql<number>`(
+      SELECT COUNT(*) FROM rooms r
+      WHERE r.host_id = ${users.id}
+      AND r.created_by = ${adminId}
+    )`.mapWith(Number),
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
@@ -365,7 +370,12 @@ export async function listUsers(adminId: string) {
     lockedDeviceName: users.lockedDeviceName,
     allowDeviceChange: users.allowDeviceChange,
     appVersion: users.appVersion,
-    assignedRoomCount: sql<number>`(SELECT COUNT(*) FROM ${roomMembers} WHERE ${roomMembers.userId} = ${users.id})`.mapWith(Number),
+    assignedRoomCount: sql<number>`(
+      SELECT COUNT(*) FROM room_members rm
+      JOIN rooms r ON r.id = rm.room_id
+      WHERE rm.user_id = ${users.id}
+      AND r.created_by = ${adminId}
+    )`.mapWith(Number),
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))

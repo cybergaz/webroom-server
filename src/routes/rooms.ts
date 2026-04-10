@@ -54,6 +54,42 @@ const userRoomRoutes = new Elysia({ prefix: '/rooms' })
     { params: t.Object({ roomId: t.String() }) },
   )
 
+  // ─── GET /my-recordings (list caller's own recordings, paginated) ────────────
+  .get(
+    '/my-recordings',
+    async ({ user, query }) => {
+      return recordingService.getMyRecordings({
+        userId: user.userId,
+        from: query.from ? new Date(query.from) : undefined,
+        to: query.to ? new Date(query.to) : undefined,
+        page: query.page ?? 1,
+        limit: query.limit ?? 50,
+      });
+    },
+    {
+      query: t.Object({
+        from: t.Optional(t.String()),
+        to: t.Optional(t.String()),
+        page: t.Optional(t.Numeric()),
+        limit: t.Optional(t.Numeric()),
+      }),
+    },
+  )
+
+  // ─── GET /my-recordings/:recordingId/url (presigned URL for own recording) ──
+  .get(
+    '/my-recordings/:recordingId/url',
+    async ({ params, user, set }) => {
+      try {
+        return await recordingService.getMyRecordingUrl(params.recordingId, user.userId);
+      } catch (err: any) {
+        set.status = err.status ?? 500;
+        return { error: err.message };
+      }
+    },
+    { params: t.Object({ recordingId: t.String() }) },
+  )
+
   // ─── POST /rooms/:roomId/ptt-recordings (upload PTT recording) ──────────────
   .post(
     '/:roomId/ptt-recordings',
