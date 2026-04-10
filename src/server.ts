@@ -7,6 +7,7 @@ import { roomsRoute } from './routes/rooms';
 import { superAdminRoute } from './routes/super-admin';
 import { adminRoute } from './routes/admin';
 import { wsRoute } from './routes/ws';
+import { sportsRoute } from './routes/sports';
 
 async function bootstrap() {
   // Initialize Redis pub/sub for cross-instance WS event routing
@@ -39,7 +40,8 @@ async function bootstrap() {
         .use(roomsRoute)
         .use(superAdminRoute)
         .use(adminRoute)
-        .use(wsRoute),
+        .use(wsRoute)
+        .use(sportsRoute),
     )
 
     .listen(env.port);

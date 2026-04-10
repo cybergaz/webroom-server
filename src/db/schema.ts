@@ -36,6 +36,7 @@ export const users = pgTable(
     lockedDeviceId: varchar('locked_device_id', { length: 255 }),
     lockedDeviceName: varchar('locked_device_name', { length: 255 }),
     allowDeviceChange: boolean('allow_device_change').default(false).notNull(),
+    isTestAccount: boolean('is_test_account').default(false).notNull(),
     appVersion: varchar('app_version', { length: 50 }),
   },
   (t) => [

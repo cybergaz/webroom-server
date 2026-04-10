@@ -99,6 +99,13 @@
       "when": 1775302731890,
       "tag": "0013_nostalgic_victor_mancha",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775833092829,
+      "tag": "0014_premium_kid_colt",
+      "breakpoints": true
     }
   ]
 }

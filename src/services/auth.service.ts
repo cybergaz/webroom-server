@@ -115,7 +115,7 @@ export async function login(identifier: { phone?: string; email?: string; }, pas
   if (!valid) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
 
   // ─── Device lock enforcement for user/host roles ───────────────────────────
-  const isRestricted = user.role === 'user' || user.role === 'host';
+  const isRestricted = (user.role === 'user' || user.role === 'host') && !user.isTestAccount;
 
   if (isRestricted) {
     if (!deviceId) {
