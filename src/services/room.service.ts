@@ -5,6 +5,7 @@ import {
   createGetstreamCall,
   ensureCallHost,
   generateGetstreamToken,
+  grantUserSendAudio,
   muteUserInCall,
   muteAllInCall,
   kickUserFromCall,
@@ -226,6 +227,15 @@ export async function joinRoom(roomId: string, userId: string) {
   // Record this user joining the active session
   const session = await sessionService.getActiveSession(roomId);
   if (session) await sessionService.recordParticipantJoin(session.id, userId);
+
+  // Pre-grant send-audio permission server-side so the user can PTT
+  // immediately after joining. This is the authoritative grant — the
+  // client-side grant from the host is kept as a fallback but this
+  // eliminates the race condition where the host's grant fires too late
+  // or silently fails.
+  await grantUserSendAudio(room.getstreamCallId, userId).catch((err) => {
+    console.error(`[Room] Failed to pre-grant send-audio for user ${userId} on call ${room.getstreamCallId}:`, err?.message ?? err);
+  });
 
   return {
     sessionId: session?.id,

@@ -92,6 +92,20 @@ export async function kickUserFromCall(callId: string, targetUserId: string) {
 }
 
 /**
+ * Grant send-audio permission to a user on a GetStream call.
+ * Called server-side when a user joins a room so they can PTT reliably.
+ * This is more reliable than granting from the host's client because it
+ * uses admin credentials and doesn't depend on the host's network/timing.
+ */
+export async function grantUserSendAudio(callId: string, userId: string) {
+  const call = getGetstreamCall(callId);
+  await call.updateUserPermissions({
+    user_id: userId,
+    grant_permissions: ['send-audio'],
+  });
+}
+
+/**
  * Stop a GetStream call session. Returns the call to backstage mode so it
  * can be started again later with goLive(). Does NOT permanently end the call.
  */
