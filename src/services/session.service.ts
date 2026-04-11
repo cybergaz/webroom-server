@@ -1,6 +1,6 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../db/client'
-import { roomSessions, sessionParticipants, speakingEvents } from '../db/schema'
+import { rooms, roomSessions, sessionParticipants, speakingEvents } from '../db/schema'
 
 // ─── Get or create open session ───────────────────────────────────────────────
 
@@ -125,8 +125,15 @@ export async function recordSpeakingEnd(sessionId: string, userId: string): Prom
 
 // ─── Get session history ──────────────────────────────────────────────────────
 
-export async function getSessionHistory(roomId?: string) {
-  const where = roomId ? eq(roomSessions.roomId, roomId) : undefined
+export async function getSessionHistory(roomId?: string, adminId?: string) {
+  const conditions = []
+  if (roomId) {
+    conditions.push(eq(roomSessions.roomId, roomId))
+  } else if (adminId) {
+    const adminRooms = db.select({ id: rooms.id }).from(rooms).where(eq(rooms.createdBy, adminId))
+    conditions.push(inArray(roomSessions.roomId, adminRooms))
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined
 
   return db.query.roomSessions.findMany({
     where,

@@ -76,8 +76,7 @@ export const rooms = pgTable(
     status: roomStatusEnum('status').default('active').notNull(),
     getstreamCallId: varchar('getstream_call_id', { length: 255 }).notNull().unique(),
     createdBy: uuid('created_by')
-      .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: 'set null' }),
     hostId: uuid('host_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

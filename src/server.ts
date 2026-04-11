@@ -24,9 +24,13 @@ async function bootstrap() {
     )
 
     // Global error handler
-    .onError(({ error, set }) => {
+    .onError(({ error, set, request }) => {
       const err = error as any;
-      set.status = err.status ?? 500;
+      const status = err.status ?? 500;
+      set.status = status;
+      if (status >= 500) {
+        console.error(`[error] ${request.method} ${new URL(request.url).pathname} → ${status}`, err);
+      }
       return { error: err.message ?? 'Internal server error' };
     })
 

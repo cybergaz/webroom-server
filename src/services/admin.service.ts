@@ -65,15 +65,20 @@ export async function listAdmins() {
   });
 }
 
-export async function updateAdmin(adminId: string, data: { name?: string; email?: string; }) {
+export async function updateAdmin(adminId: string, data: { name?: string; email?: string; password?: string; }) {
   const admin = await db.query.users.findFirst({
     where: and(eq(users.id, adminId), eq(users.role, 'admin')),
   });
   if (!admin) throw err(404, 'Admin not found');
 
+  const updateData: Record<string, unknown> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.email !== undefined) updateData.email = data.email;
+  if (data.password) updateData.passwordHash = await Bun.password.hash(data.password);
+
   const [updated] = await db
     .update(users)
-    .set(data)
+    .set(updateData)
     .where(eq(users.id, adminId))
     .returning({ id: users.id, name: users.name, email: users.email });
 

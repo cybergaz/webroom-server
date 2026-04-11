@@ -49,6 +49,7 @@ export const superAdminRoute = new Elysia({ prefix: '/super-admin' })
       body: t.Object({
         name: t.Optional(t.String({ minLength: 1 })),
         email: t.Optional(t.String()),
+        password: t.Optional(t.String({ minLength: 6 })),
       }),
     },
   )

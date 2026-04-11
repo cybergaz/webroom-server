@@ -42,14 +42,16 @@ export async function savePttRecording(params: {
 export async function listPttRecordings(params: {
   roomId?: string;
   userId?: string;
+  adminId?: string;
   page: number;
   limit: number;
 }) {
-  const { roomId, userId, page, limit } = params;
+  const { roomId, userId, adminId, page, limit } = params;
 
   const conditions = [];
   if (roomId) conditions.push(eq(pttRecordings.roomId, roomId));
   if (userId) conditions.push(eq(pttRecordings.userId, userId));
+  if (adminId) conditions.push(eq(rooms.createdBy, adminId));
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -77,6 +79,7 @@ export async function listPttRecordings(params: {
     db
       .select({ total: count() })
       .from(pttRecordings)
+      .innerJoin(rooms, eq(pttRecordings.roomId, rooms.id))
       .where(where),
   ]);
 

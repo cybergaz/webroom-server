@@ -423,15 +423,15 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   // ─── Sessions ───────────────────────────────────────────────────────────────
 
-  .get('/sessions', async () => {
-    const sessions = await sessionService.getSessionHistory();
+  .get('/sessions', async ({ user }) => {
+    const sessions = await sessionService.getSessionHistory(undefined, user.userId);
     return { sessions };
   })
 
   .get(
     '/sessions/:roomId',
-    async ({ params }) => {
-      const sessions = await sessionService.getSessionHistory(params.roomId);
+    async ({ params, user }) => {
+      const sessions = await sessionService.getSessionHistory(params.roomId, user.userId);
       return { sessions };
     },
     { params: t.Object({ roomId: t.String() }) },
@@ -457,10 +457,11 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .get(
     '/ptt-recordings',
-    async ({ query }) => {
+    async ({ query, user }) => {
       return recordingService.listPttRecordings({
         roomId: query.roomId || undefined,
         userId: query.userId || undefined,
+        adminId: user.userId,
         page: query.page ? parseInt(query.page as string, 10) : 1,
         limit: query.limit ? parseInt(query.limit as string, 10) : 20,
       });
