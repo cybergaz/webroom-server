@@ -106,14 +106,16 @@ export async function getPttRecordingUrl(recordingId: string) {
 
 export async function getMyRecordings(params: {
   userId: string;
+  roomId?: string;
   from?: Date;
   to?: Date;
   page: number;
   limit: number;
 }) {
-  const { userId, from, to, page, limit } = params;
+  const { userId, roomId, from, to, page, limit } = params;
 
   const conditions = [eq(pttRecordings.userId, userId)];
+  if (roomId) conditions.push(eq(pttRecordings.roomId, roomId));
   if (from) conditions.push(gte(pttRecordings.createdAt, from));
   if (to) conditions.push(lte(pttRecordings.createdAt, to));
   const where = and(...conditions);

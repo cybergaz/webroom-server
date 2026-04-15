@@ -60,6 +60,7 @@ const userRoomRoutes = new Elysia({ prefix: '/rooms' })
     async ({ user, query }) => {
       return recordingService.getMyRecordings({
         userId: user.userId,
+        roomId: query.roomId,
         from: query.from ? new Date(query.from) : undefined,
         to: query.to ? new Date(query.to) : undefined,
         page: query.page ?? 1,
@@ -68,6 +69,7 @@ const userRoomRoutes = new Elysia({ prefix: '/rooms' })
     },
     {
       query: t.Object({
+        roomId: t.Optional(t.String()),
         from: t.Optional(t.String()),
         to: t.Optional(t.String()),
         page: t.Optional(t.Numeric()),
