@@ -14,6 +14,7 @@ import { generateGetstreamToken } from '../lib/getstream';
 import { blacklistToken } from '../lib/redis';
 import { sendToUser } from '../lib/ws-manager';
 import { customAlphabet } from 'nanoid';
+import { getLicense } from './license.service';
 
 // ─── Request ID generator ────────────────────────────────────────────────────
 
@@ -249,6 +250,8 @@ async function issueTokens(user: UserType, deviceName?: string, appVersion?: str
     db.update(users).set(userUpdate).where(eq(users.id, user.id)),
   ]);
 
+  const license = user.role === 'admin' ? await getLicense(user.id) : null;
+
   return {
     accessToken,
     refreshToken: newRefresh,
@@ -261,6 +264,7 @@ async function issueTokens(user: UserType, deviceName?: string, appVersion?: str
       role: user.role,
       status: user.status,
       requestId: user.requestId,
+      license,
     },
   };
 }

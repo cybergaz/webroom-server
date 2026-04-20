@@ -1,8 +1,9 @@
 import { and, eq, exists, ilike, isNull, or, sql, desc } from 'drizzle-orm';
 import { db } from '../db/client';
-import { adminUserAdoptions, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
+import { adminUserAdoptions, adminLicenses, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
 import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
 import { ensureCallHost } from '../lib/getstream';
+import { assertAdminLicenseActive } from './license.service';
 
 const err = (status: number, message: string) => Object.assign(new Error(message), { status });
 
@@ -58,10 +59,44 @@ export async function createAdmin(
 }
 
 export async function listAdmins() {
-  return db.query.users.findMany({
-    where: eq(users.role, 'admin'),
-    columns: { passwordHash: false },
-    orderBy: (t, { asc }) => [asc(t.name)],
+  const rows = await db
+    .select({
+      id: users.id,
+      requestId: users.requestId,
+      name: users.name,
+      phone: users.phone,
+      email: users.email,
+      role: users.role,
+      status: users.status,
+      createdByUserId: users.createdByUserId,
+      createdAt: users.createdAt,
+      lastSeenAt: users.lastSeenAt,
+      appVersion: users.appVersion,
+      licensePlanDuration: adminLicenses.planDuration,
+      licenseActivatedAt: adminLicenses.activatedAt,
+      licenseExpiresAt: adminLicenses.expiresAt,
+    })
+    .from(users)
+    .leftJoin(adminLicenses, eq(adminLicenses.adminId, users.id))
+    .where(eq(users.role, 'admin'))
+    .orderBy(users.name);
+
+  const now = Date.now();
+  return rows.map(({ licensePlanDuration, licenseActivatedAt, licenseExpiresAt, ...u }) => {
+    if (!licenseExpiresAt) return { ...u, license: null };
+    const exp = new Date(licenseExpiresAt).getTime();
+    const expired = exp <= now;
+    const daysRemaining = expired ? 0 : Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+    return {
+      ...u,
+      license: {
+        planDuration: licensePlanDuration!,
+        activatedAt: new Date(licenseActivatedAt!).toISOString(),
+        expiresAt: new Date(licenseExpiresAt).toISOString(),
+        status: expired ? ('expired' as const) : ('active' as const),
+        daysRemaining,
+      },
+    };
   });
 }
 
@@ -108,6 +143,7 @@ export async function createHost(
   actorId: string,
   data: { name: string; phone?: string; email?: string; password: string; },
 ) {
+  await assertAdminLicenseActive(actorId);
   if (!data.phone && !data.email) throw err(400, 'Phone or email is required');
 
   const conditions = [];
@@ -178,6 +214,7 @@ export async function listHosts(adminId: string) {
 }
 
 export async function updateHost(hostId: string, adminId: string, data: { name?: string; email?: string; password?: string; }) {
+  await assertAdminLicenseActive(adminId);
   const [host] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, hostId), eq(users.role, 'host'), isAdoptedBy(adminId)))
@@ -199,6 +236,7 @@ export async function updateHost(hostId: string, adminId: string, data: { name?:
 }
 
 export async function activateHost(hostId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [host] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, hostId), eq(users.role, 'host'), isAdoptedBy(adminId)))
@@ -209,6 +247,7 @@ export async function activateHost(hostId: string, adminId: string) {
 }
 
 export async function deactivateHost(hostId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [host] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, hostId), eq(users.role, 'host'), isAdoptedBy(adminId)))
@@ -219,6 +258,7 @@ export async function deactivateHost(hostId: string, adminId: string) {
 }
 
 export async function deleteHost(hostId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [host] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, hostId), eq(users.role, 'host'), isAdoptedBy(adminId)))
@@ -229,6 +269,7 @@ export async function deleteHost(hostId: string, adminId: string) {
 }
 
 export async function assignHostToRoom(roomId: string, hostId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId) });
   if (!room) throw err(404, 'Room not found');
 
@@ -311,6 +352,7 @@ export async function createUser(
   actorId: string,
   data: { name: string; phone?: string; email?: string; password: string; },
 ) {
+  await assertAdminLicenseActive(actorId);
   if (!data.phone && !data.email) throw err(400, 'Phone or email is required');
 
   const conditions = [];
@@ -391,6 +433,7 @@ export async function listUsers(adminId: string) {
 }
 
 export async function updateUser(userId: string, adminId: string, data: { name?: string; email?: string; }) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
@@ -407,6 +450,7 @@ export async function updateUser(userId: string, adminId: string, data: { name?:
 }
 
 export async function activateUser(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
@@ -417,6 +461,7 @@ export async function activateUser(userId: string, adminId: string) {
 }
 
 export async function deactivateUser(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
@@ -427,6 +472,7 @@ export async function deactivateUser(userId: string, adminId: string) {
 }
 
 export async function deleteUser(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
@@ -460,6 +506,7 @@ export async function searchUser(requestId: string, adminId: string) {
 }
 
 export async function approveOrAdopt(userId: string, adminId: string, temporaryPassword?: string) {
+  await assertAdminLicenseActive(adminId);
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: { id: true, status: true },
@@ -500,7 +547,8 @@ export async function approveOrAdopt(userId: string, adminId: string, temporaryP
   throw err(409, `Cannot process user with status: ${user.status}`);
 }
 
-export async function rejectUser(userId: string) {
+export async function rejectUser(userId: string, adminId?: string) {
+  if (adminId) await assertAdminLicenseActive(adminId);
   const user = await db.query.users.findFirst({
     where: and(eq(users.id, userId), eq(users.status, 'pending_approval')),
   });
@@ -518,6 +566,7 @@ export async function rejectUser(userId: string) {
 }
 
 export async function allowDeviceChange(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id, role: users.role })
     .from(users)
     .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
@@ -534,6 +583,7 @@ export async function allowDeviceChange(userId: string, adminId: string) {
 }
 
 export async function resetDeviceLock(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id, role: users.role })
     .from(users)
     .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
@@ -550,6 +600,7 @@ export async function resetDeviceLock(userId: string, adminId: string) {
 }
 
 export async function forceLogoutUser(userId: string, adminId: string) {
+  await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
     .where(and(eq(users.id, userId), isAdoptedBy(adminId)))
@@ -567,6 +618,7 @@ export async function forceLogoutUser(userId: string, adminId: string) {
 }
 
 export async function adoptUser(adminId: string, targetUserId: string) {
+  await assertAdminLicenseActive(adminId);
   const [target] = await db.select({ id: users.id, role: users.role })
     .from(users)
     .where(and(eq(users.id, targetUserId), or(eq(users.role, 'user'), eq(users.role, 'host'))))

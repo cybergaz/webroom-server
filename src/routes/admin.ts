@@ -5,6 +5,7 @@ import * as sessionService from '../services/session.service';
 import * as roomService from '../services/room.service';
 import * as recordingService from '../services/recording.service';
 import * as transcriptionService from '../services/transcription.service';
+import { assertAdminLicenseActive } from '../services/license.service';
 
 export const adminRoute = new Elysia({ prefix: '/admin' })
   .use(adminPlugin)
@@ -189,9 +190,9 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .post(
     '/users/:userId/reject',
-    async ({ params, set }) => {
+    async ({ params, user, set }) => {
       try {
-        return await adminService.rejectUser(params.userId);
+        return await adminService.rejectUser(params.userId, user.userId);
       } catch (err: any) {
         set.status = err.status ?? 500;
         return { error: err.message };
@@ -384,8 +385,9 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .post(
     '/rooms/:roomId/unassign-host',
-    async ({ params, set }) => {
+    async ({ params, user, set }) => {
       try {
+        await assertAdminLicenseActive(user.userId);
         return await adminService.unassignHostFromRoom(params.roomId);
       } catch (err: any) {
         set.status = err.status ?? 500;
@@ -397,8 +399,9 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .post(
     '/rooms/:roomId/activate',
-    async ({ params, set }) => {
+    async ({ params, user, set }) => {
       try {
+        await assertAdminLicenseActive(user.userId);
         return await adminService.setRoomActive(params.roomId, true);
       } catch (err: any) {
         set.status = err.status ?? 500;
@@ -410,8 +413,9 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
 
   .post(
     '/rooms/:roomId/deactivate',
-    async ({ params, set }) => {
+    async ({ params, user, set }) => {
       try {
+        await assertAdminLicenseActive(user.userId);
         return await adminService.setRoomActive(params.roomId, false);
       } catch (err: any) {
         set.status = err.status ?? 500;

@@ -1,6 +1,14 @@
 import Elysia, { t } from 'elysia'
 import { superAdminPlugin } from '../middleware/auth'
 import * as adminService from '../services/admin.service'
+import * as licenseService from '../services/license.service'
+
+const PLAN_DURATION_SCHEMA = t.Union([
+  t.Literal('1_month'),
+  t.Literal('3_months'),
+  t.Literal('6_months'),
+  t.Literal('1_year'),
+])
 
 export const superAdminRoute = new Elysia({ prefix: '/super-admin' })
   .use(superAdminPlugin)
@@ -87,6 +95,56 @@ export const superAdminRoute = new Elysia({ prefix: '/super-admin' })
         await adminService.deleteAdmin(params.adminId)
         set.status = 204
         return null
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ adminId: t.String() }) },
+  )
+
+  // ─── License management ─────────────────────────────────────────────────────
+
+  .post(
+    '/admins/:adminId/license',
+    async ({ params, body, user, set }) => {
+      try {
+        const license = await licenseService.assignLicense(user.userId, params.adminId, body.planDuration)
+        return { license }
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ adminId: t.String() }),
+      body: t.Object({ planDuration: PLAN_DURATION_SCHEMA }),
+    },
+  )
+
+  .post(
+    '/admins/:adminId/license/extend',
+    async ({ params, body, user, set }) => {
+      try {
+        const license = await licenseService.extendLicense(user.userId, params.adminId, body.planDuration)
+        return { license }
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ adminId: t.String() }),
+      body: t.Object({ planDuration: PLAN_DURATION_SCHEMA }),
+    },
+  )
+
+  .post(
+    '/admins/:adminId/license/revoke',
+    async ({ params, user, set }) => {
+      try {
+        const license = await licenseService.revokeLicense(user.userId, params.adminId)
+        return { license }
       } catch (err: any) {
         set.status = err.status ?? 500
         return { error: err.message }

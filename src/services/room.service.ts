@@ -21,6 +21,10 @@ import type { UserRole } from '../lib/jwt';
 import * as sessionService from './session.service';
 import { nanoid } from 'nanoid';
 import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
+import {
+  assertLicenseActiveForActor,
+  assertLicenseActiveForRoom,
+} from './license.service';
 
 // ─── List rooms ───────────────────────────────────────────────────────────────
 
@@ -54,6 +58,7 @@ export async function createRoom(
   description?: string,
   hostId?: string,
 ) {
+  await assertLicenseActiveForActor(actorId);
   const roomId = crypto.randomUUID();
   // const getstreamCallId = nanoid(26);
   const getstreamCallId = roomId;
@@ -130,6 +135,7 @@ export async function getRoomSessions(roomId: string, actorId: string, actorRole
 // so the host can join the call immediately.
 
 export async function startRoom(roomId: string, actorId: string, actorRole: UserRole) {
+  await assertLicenseActiveForRoom(roomId);
   const room = await assertRoomManager(roomId, actorId, actorRole);
 
   if (room.status === 'inactive') {
@@ -175,6 +181,7 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
 // so they know the room is truly ready to join.
 
 export async function confirmHostReady(roomId: string, actorId: string, actorRole: UserRole) {
+  await assertLicenseActiveForRoom(roomId);
   const room = await assertRoomManager(roomId, actorId, actorRole);
 
   if (room.status !== 'live') {
@@ -208,6 +215,7 @@ export async function confirmHostReady(roomId: string, actorId: string, actorRol
 // Only allowed when room is live (host is present).
 
 export async function joinRoom(roomId: string, userId: string) {
+  await assertLicenseActiveForRoom(roomId);
   const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId) });
   if (!room) throw Object.assign(new Error('Room not found'), { status: 404 });
 

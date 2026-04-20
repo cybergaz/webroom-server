@@ -65,6 +65,38 @@ export const adminUserAdoptions = pgTable(
 
 export type AdminUserAdoption = typeof adminUserAdoptions.$inferSelect;
 
+// ─── Admin Licenses ───────────────────────────────────────────────────────────
+
+export const planDurationEnum = pgEnum('plan_duration', [
+  '1_month',
+  '3_months',
+  '6_months',
+  '1_year',
+]);
+
+export const adminLicenses = pgTable(
+  'admin_licenses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminId: uuid('admin_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    planDuration: planDurationEnum('plan_duration').notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    assignedByUserId: uuid('assigned_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('idx_admin_licenses_expires_at').on(t.expiresAt)],
+);
+
+export type AdminLicense = typeof adminLicenses.$inferSelect;
+export type PlanDuration = (typeof planDurationEnum.enumValues)[number];
+
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 
 export const rooms = pgTable(

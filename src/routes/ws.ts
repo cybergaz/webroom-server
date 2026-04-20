@@ -22,6 +22,7 @@ import { connections, get_ws_data, set_ws_data, unregisterConnection, sendToUser
 import { db } from '../db/client';
 import { rooms, users } from '../db/schema';
 import { ElysiaWS } from 'elysia/dist/ws';
+import { assertLicenseActiveForRoom } from '../services/license.service';
 
 /** Update lastSeenAt only if it's null or older than 5 minutes (fire-and-forget). */
 function touchLastSeen(userId: string) {
@@ -179,7 +180,24 @@ export const wsRoute = new Elysia()
 
         if (msg.event === 'speaking.start') {
           const roomId = msg.payload?.roomId;
-          if (roomId && userId) relaySpeakingEvent('speaking.start', roomId, userId);
+          if (roomId && userId) {
+            try {
+              await assertLicenseActiveForRoom(roomId);
+              relaySpeakingEvent('speaking.start', roomId, userId);
+            } catch (e: any) {
+              if (e?.code === 'LICENSE_EXPIRED') {
+                ws.send(
+                  JSON.stringify({
+                    event: 'ws.error',
+                    payload: { code: 'LICENSE_EXPIRED', message: e.message },
+                    timestamp: new Date().toISOString(),
+                  }),
+                );
+                return;
+              }
+              throw e;
+            }
+          }
           return;
         }
 
@@ -192,7 +210,22 @@ export const wsRoute = new Elysia()
         if (msg.event === 'transcription.caption') {
           const { roomId, text, startTime, endTime } = msg.payload ?? {};
           if (roomId && userId && text) {
-            relayTranscriptionCaption(roomId, userId, text, startTime ?? '', endTime ?? '');
+            try {
+              await assertLicenseActiveForRoom(roomId);
+              relayTranscriptionCaption(roomId, userId, text, startTime ?? '', endTime ?? '');
+            } catch (e: any) {
+              if (e?.code === 'LICENSE_EXPIRED') {
+                ws.send(
+                  JSON.stringify({
+                    event: 'ws.error',
+                    payload: { code: 'LICENSE_EXPIRED', message: e.message },
+                    timestamp: new Date().toISOString(),
+                  }),
+                );
+                return;
+              }
+              throw e;
+            }
           }
           return;
         }
