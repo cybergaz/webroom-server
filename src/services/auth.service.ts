@@ -11,8 +11,8 @@ import {
   accessTokenTtlSeconds,
 } from '../lib/jwt';
 import { generateGetstreamToken } from '../lib/getstream';
-import { blacklistToken } from '../lib/redis';
-import { sendToUser } from '../lib/ws-manager';
+import { addActiveJti, blacklistToken, clearActiveJtis, getActiveJtis, removeActiveJti } from '../lib/redis';
+import { connections, sendToUser } from '../lib/ws-manager';
 import { customAlphabet } from 'nanoid';
 import { getLicense } from './license.service';
 
@@ -115,54 +115,38 @@ export async function login(identifier: { phone?: string; email?: string; }, pas
   const valid = await Bun.password.verify(password, user.passwordHash);
   if (!valid) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
 
-  // ─── Device lock enforcement for user/host roles ───────────────────────────
+  // ─── Single-session enforcement for user/host roles ────────────────────────
+  // Device-lock enforcement now lives at join-room level (per-admin), not here.
   const isRestricted = (user.role === 'user' || user.role === 'host') && !user.isTestAccount;
 
   if (isRestricted) {
-    if (!deviceId) {
-      throw Object.assign(new Error('Device ID is required'), { status: 400 });
-    }
-
-    if (user.lockedDeviceId) {
-      // User already has a locked device
-      if (user.lockedDeviceId !== deviceId) {
-        // Trying to login from a different device
-        if (!user.allowDeviceChange) {
-          throw Object.assign(
-            new Error(`Login denied. You can only login from your registered device (${user.lockedDeviceName || 'Unknown'}). Contact your administrator to change your device.`),
-            { status: 403, code: 'DEVICE_NOT_ALLOWED' },
-          );
-        }
-        // Admin has allowed a device change — lock to new device, reset flag
-        await db.update(users).set({
-          lockedDeviceId: deviceId,
-          lockedDeviceName: deviceName || null,
-          allowDeviceChange: false,
-        }).where(eq(users.id, user.id));
-      }
-      // else: same device, proceed normally
-    } else {
-      // First login — register this device
-      await db.update(users).set({
-        lockedDeviceId: deviceId,
-        lockedDeviceName: deviceName || null,
-      }).where(eq(users.id, user.id));
-    }
-
-    // Single-session enforcement: invalidate all existing sessions
     const existingTokens = await db.query.refreshTokens.findMany({
       where: eq(refreshTokens.userId, user.id),
       columns: { id: true, device_name: true },
     });
 
     if (existingTokens.length > 0) {
+      // 1. Blacklist every currently-issued access JTI for this user so the
+      //    old device's next authed request is rejected even if its WS is down.
+      const activeJtis = await getActiveJtis(user.id);
+      await Promise.all(activeJtis.map((jti) => blacklistToken(jti, accessTokenTtlSeconds())));
+      await clearActiveJtis(user.id);
+
+      // 2. Delete all refresh tokens so the old device can't refresh.
       await db.delete(refreshTokens).where(eq(refreshTokens.userId, user.id));
-      // Notify old device that it was logged out
+
+      // 3. Emit session_replaced WS event for the fast path (if old WS live).
       await sendToUser(user.id, 'user.session_replaced', {
         userId: user.id,
         newDeviceName: deviceName || 'Unknown',
         reason: `You have been logged out because a new login was detected on ${deviceName || 'another device'}.`,
       });
+
+      // 4. Proactively close the old WS connection if it's still in the map.
+      const oldConn = connections.get(user.id);
+      if (oldConn && oldConn.ws.readyState === 1) {
+        try { oldConn.ws.close(4001, 'session_replaced'); } catch {}
+      }
     }
   }
 
@@ -196,10 +180,28 @@ export async function refresh(refreshToken: string, deviceName?: string, appVers
   return issueTokens(user satisfies UserType, deviceName || stored.device_name || undefined, appVersion);
 }
 
+// ─── Session revocation helper ───────────────────────────────────────────────
+// Fully kills all currently-issued sessions for a user: blacklists access JTIs,
+// deletes refresh tokens, force-closes WS. Callers that want to notify the user
+// should emit the WS event themselves (before or after) as appropriate.
+export async function revokeAllSessions(userId: string) {
+  const activeJtis = await getActiveJtis(userId);
+  await Promise.all(activeJtis.map((jti) => blacklistToken(jti, accessTokenTtlSeconds())));
+  await clearActiveJtis(userId);
+
+  await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
+
+  const oldConn = connections.get(userId);
+  if (oldConn && oldConn.ws.readyState === 1) {
+    try { oldConn.ws.close(4001, 'session_revoked'); } catch {}
+  }
+}
+
 // ─── Logout ───────────────────────────────────────────────────────────────────
 
 export async function logout(userId: string, jti: string, refreshToken: string) {
   await blacklistToken(jti, accessTokenTtlSeconds());
+  await removeActiveJti(userId, jti);
 
   const tokenHash = await hashToken(refreshToken);
   await db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash));
@@ -231,7 +233,7 @@ interface UserType {
 }
 
 async function issueTokens(user: UserType, deviceName?: string, appVersion?: string) {
-  const [accessToken, { token: newRefresh }] = await Promise.all([
+  const [{ token: accessToken, jti: accessJti }, { token: newRefresh }] = await Promise.all([
     signAccessToken(user.id, user.role),
     signRefreshToken(user.id),
   ]);
@@ -248,6 +250,7 @@ async function issueTokens(user: UserType, deviceName?: string, appVersion?: str
       expiresAt: refreshTokenExpiresAt(),
     }),
     db.update(users).set(userUpdate).where(eq(users.id, user.id)),
+    addActiveJti(user.id, accessJti, accessTokenTtlSeconds()),
   ]);
 
   const license = user.role === 'admin' ? await getLicense(user.id) : null;

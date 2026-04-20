@@ -1,9 +1,11 @@
 import { and, eq, exists, ilike, isNull, or, sql, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db/client';
 import { adminUserAdoptions, adminLicenses, users, rooms, roomMembers, refreshTokens, roomSessions, sessionParticipants } from '../db/schema';
 import { sendToUser, sendToRoomMembers } from '../lib/ws-manager';
 import { ensureCallHost } from '../lib/getstream';
 import { assertAdminLicenseActive } from './license.service';
+import { revokeAllSessions } from './auth.service';
 
 const err = (status: number, message: string) => Object.assign(new Error(message), { status });
 
@@ -137,6 +139,67 @@ export async function deleteAdmin(adminId: string) {
   await db.delete(users).where(eq(users.id, adminId));
 }
 
+// ─── Super-admin global user management ──────────────────────────────────────
+
+export async function listAllUsersForSuperAdmin() {
+  const admins = alias(users, 'holder');
+
+  const rows = await db
+    .select({
+      id: users.id,
+      requestId: users.requestId,
+      name: users.name,
+      phone: users.phone,
+      email: users.email,
+      role: users.role,
+      status: users.status,
+      createdAt: users.createdAt,
+      lastSeenAt: users.lastSeenAt,
+      appVersion: users.appVersion,
+      holderId: admins.id,
+      holderName: admins.name,
+      adoptedAt: adminUserAdoptions.adoptedAt,
+    })
+    .from(users)
+    .leftJoin(adminUserAdoptions, eq(adminUserAdoptions.userId, users.id))
+    .leftJoin(admins, eq(admins.id, adminUserAdoptions.adminId))
+    .where(or(eq(users.role, 'user'), eq(users.role, 'host')))
+    .orderBy(users.name);
+
+  const grouped = new Map<string, any>();
+  for (const row of rows) {
+    const existing = grouped.get(row.id);
+    const holder = row.holderId && row.holderName
+      ? { adminId: row.holderId, adminName: row.holderName, adoptedAt: row.adoptedAt }
+      : null;
+    if (existing) {
+      if (holder) existing.holders.push(holder);
+    } else {
+      const { holderId, holderName, adoptedAt, ...base } = row;
+      grouped.set(row.id, { ...base, holders: holder ? [holder] : [] });
+    }
+  }
+  return Array.from(grouped.values());
+}
+
+export async function hardDeleteUser(userId: string) {
+  const [target] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host'))))
+    .limit(1);
+  if (!target) throw err(404, 'User not found');
+
+  await sendToUser(userId, 'user.force_logout', {
+    userId,
+    reason: 'Your account has been removed by the platform administrator.',
+  });
+  await revokeAllSessions(userId);
+
+  await db.delete(users).where(eq(users.id, userId));
+  return { userId, deleted: true };
+}
+
 // ─── Host management (scoped to admin) ──────────────────────────────────────
 
 export async function createHost(
@@ -197,9 +260,9 @@ export async function listHosts(adminId: string) {
     createdByUserId: users.createdByUserId, createdAt: users.createdAt,
     lastSeenAt: users.lastSeenAt,
     deviceName: latestToken.deviceName,
-    lockedDeviceId: users.lockedDeviceId,
-    lockedDeviceName: users.lockedDeviceName,
-    allowDeviceChange: users.allowDeviceChange,
+    lockedDeviceId: adminUserAdoptions.lockedDeviceId,
+    lockedDeviceName: adminUserAdoptions.lockedDeviceName,
+    allowDeviceChange: adminUserAdoptions.allowDeviceChange,
     appVersion: users.appVersion,
     assignedRoomCount: sql<number>`(
       SELECT COUNT(*) FROM rooms r
@@ -209,7 +272,11 @@ export async function listHosts(adminId: string) {
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
-    .where(and(eq(users.role, 'host'), isAdoptedBy(adminId)))
+    .innerJoin(
+      adminUserAdoptions,
+      and(eq(adminUserAdoptions.userId, users.id), eq(adminUserAdoptions.adminId, adminId)),
+    )
+    .where(eq(users.role, 'host'))
     .orderBy(users.name);
 }
 
@@ -413,22 +480,24 @@ export async function listUsers(adminId: string) {
     createdAt: users.createdAt,
     lastSeenAt: users.lastSeenAt,
     deviceName: latestToken.deviceName,
-    lockedDeviceId: users.lockedDeviceId,
-    lockedDeviceName: users.lockedDeviceName,
-    allowDeviceChange: users.allowDeviceChange,
+    lockedDeviceId: adminUserAdoptions.lockedDeviceId,
+    lockedDeviceName: adminUserAdoptions.lockedDeviceName,
+    allowDeviceChange: adminUserAdoptions.allowDeviceChange,
     appVersion: users.appVersion,
     assignedRoomCount: sql<number>`(
       SELECT COUNT(*) FROM room_members rm
-      JOIN rooms r ON r.id = rm.room_id
       WHERE rm.user_id = ${users.id}
-      AND r.created_by = ${adminId}
+      AND rm.added_by_admin_id = ${adminId}
     )`.mapWith(Number),
   })
     .from(users)
     .leftJoin(latestToken, eq(latestToken.userId, users.id))
-    .where(and(eq(users.role, 'user'), isAdoptedBy(adminId)))
+    .innerJoin(
+      adminUserAdoptions,
+      and(eq(adminUserAdoptions.userId, users.id), eq(adminUserAdoptions.adminId, adminId)),
+    )
+    .where(eq(users.role, 'user'))
     .orderBy(users.name);
-  console.log('[ADMIN] listUsers result sample:', result.length > 0 ? { deviceName: result[0].deviceName, lastSeenAt: result[0].lastSeenAt } : 'no users');
   return result;
 }
 
@@ -471,15 +540,27 @@ export async function deactivateUser(userId: string, adminId: string) {
   return setUserStatusByRole(userId, 'user', 'rejected');
 }
 
-export async function deleteUser(userId: string, adminId: string) {
+export async function deonboardUser(userId: string, adminId: string) {
   await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
+    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
     .limit(1);
   if (!user) throw err(404, 'User not found');
 
-  await db.delete(users).where(eq(users.id, userId));
+  const removedRooms = await db
+    .delete(roomMembers)
+    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.addedByAdminId, adminId)))
+    .returning({ roomId: roomMembers.roomId });
+
+  await db.delete(adminUserAdoptions)
+    .where(and(eq(adminUserAdoptions.adminId, adminId), eq(adminUserAdoptions.userId, userId)));
+
+  await Promise.all(
+    removedRooms.map((r) => sendToUser(userId, 'room.member_removed', { roomId: r.roomId })),
+  );
+
+  return { userId, deonboarded: true, removedRoomCount: removedRooms.length };
 }
 
 export async function searchUser(requestId: string, adminId: string) {
@@ -567,36 +648,28 @@ export async function rejectUser(userId: string, adminId?: string) {
 
 export async function allowDeviceChange(userId: string, adminId: string) {
   await assertAdminLicenseActive(adminId);
-  const [user] = await db.select({ id: users.id, role: users.role })
-    .from(users)
-    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
-    .limit(1);
-  if (!user) throw err(404, 'User not found');
 
   const [updated] = await db
-    .update(users)
+    .update(adminUserAdoptions)
     .set({ allowDeviceChange: true })
-    .where(eq(users.id, userId))
-    .returning({ id: users.id, allowDeviceChange: users.allowDeviceChange });
+    .where(and(eq(adminUserAdoptions.adminId, adminId), eq(adminUserAdoptions.userId, userId)))
+    .returning({ id: adminUserAdoptions.id, allowDeviceChange: adminUserAdoptions.allowDeviceChange });
 
-  return updated;
+  if (!updated) throw err(404, 'User not found');
+  return { id: userId, allowDeviceChange: updated.allowDeviceChange };
 }
 
 export async function resetDeviceLock(userId: string, adminId: string) {
   await assertAdminLicenseActive(adminId);
-  const [user] = await db.select({ id: users.id, role: users.role })
-    .from(users)
-    .where(and(eq(users.id, userId), or(eq(users.role, 'user'), eq(users.role, 'host')), isAdoptedBy(adminId)))
-    .limit(1);
-  if (!user) throw err(404, 'User not found');
 
   const [updated] = await db
-    .update(users)
+    .update(adminUserAdoptions)
     .set({ lockedDeviceId: null, lockedDeviceName: null, allowDeviceChange: false })
-    .where(eq(users.id, userId))
-    .returning({ id: users.id });
+    .where(and(eq(adminUserAdoptions.adminId, adminId), eq(adminUserAdoptions.userId, userId)))
+    .returning({ id: adminUserAdoptions.id });
 
-  return updated;
+  if (!updated) throw err(404, 'User not found');
+  return { id: userId };
 }
 
 export async function forceLogoutUser(userId: string, adminId: string) {
@@ -607,12 +680,11 @@ export async function forceLogoutUser(userId: string, adminId: string) {
     .limit(1);
   if (!user) throw err(404, 'User not found');
 
-  await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
-
   await sendToUser(userId, 'user.force_logout', {
     userId,
     reason: 'Logged out by administrator',
   });
+  await revokeAllSessions(userId);
 
   return { message: 'User force-logged out' };
 }
@@ -649,11 +721,11 @@ export async function forceLogoutRoomUsers(roomId: string) {
 
   await Promise.all(
     members.map(async (m) => {
-      await db.delete(refreshTokens).where(eq(refreshTokens.userId, m.userId));
       await sendToUser(m.userId, 'user.force_logout', {
         userId: m.userId,
         reason: 'Logged out by administrator',
       });
+      await revokeAllSessions(m.userId);
     }),
   );
 

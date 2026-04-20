@@ -39,22 +39,21 @@ function parseDuration(d: string): number {
 export async function signAccessToken(
   userId: string,
   role: UserRole,
-): Promise<string> {
+): Promise<{ token: string; jti: string; }> {
   const jti = crypto.randomUUID();
-  // console.log("jti -> ", jti);
   const claims: Omit<AccessTokenPayload, 'sub'> = {
     role,
     type: 'access',
     jti,
   };
 
-  // console.log('Signing access token time: ', `${parseDuration(env.jwt.accessExpiresIn)}s`);
-  return new SignJWT(claims)
+  const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime(`${parseDuration(env.jwt.accessExpiresIn)}s`)
     .sign(accessSecret);
+  return { token, jti };
 }
 
 export async function signRefreshToken(userId: string): Promise<{ token: string; jti: string; }> {

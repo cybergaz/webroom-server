@@ -32,12 +32,16 @@ const userRoomRoutes = new Elysia({ prefix: '/rooms' })
   // ─── POST /rooms/:roomId/join ────────────────────────────────────────────────
   .post(
     '/:roomId/join',
-    async ({ params, user, set }) => {
+    async ({ params, headers, user, set }) => {
       try {
-        return await roomService.joinRoom(params.roomId, user.userId)
+        const deviceId = headers['x-device-id'] as string | undefined
+        const deviceName = headers['x-device-name'] as string | undefined
+        return await roomService.joinRoom(params.roomId, user.userId, deviceId, deviceName)
       } catch (err: any) {
         set.status = err.status ?? 500
-        return { error: err.message }
+        const payload: Record<string, unknown> = { error: err.message }
+        if (err.code) payload.code = err.code
+        return payload
       }
     },
     { params: t.Object({ roomId: t.String() }) },

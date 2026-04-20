@@ -39,7 +39,7 @@ async function upsertTestUser(opts: {
   if (existing) {
     // Ensure it's approved and flagged as test account (idempotent re-run)
     await db.update(users)
-      .set({ status: 'approved', isTestAccount: true, lockedDeviceId: null, lockedDeviceName: null })
+      .set({ status: 'approved', isTestAccount: true })
       .where(eq(users.id, existing.id))
     console.log(`[seed:test] ${opts.role} already exists — refreshed (${opts.email})`)
     return existing.id

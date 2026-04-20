@@ -312,13 +312,11 @@ export const adminRoute = new Elysia({ prefix: '/admin' })
     { params: t.Object({ userId: t.String() }) },
   )
 
-  .delete(
-    '/users/:userId',
+  .post(
+    '/users/:userId/deonboard',
     async ({ params, user, set }) => {
       try {
-        await adminService.deleteUser(params.userId, user.userId);
-        set.status = 204;
-        return null;
+        return await adminService.deonboardUser(params.userId, user.userId);
       } catch (err: any) {
         set.status = err.status ?? 500;
         return { error: err.message };

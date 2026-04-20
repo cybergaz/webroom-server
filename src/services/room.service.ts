@@ -1,6 +1,6 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { rooms, roomMembers } from '../db/schema';
+import { rooms, roomMembers, adminUserAdoptions, users } from '../db/schema';
 import {
   createGetstreamCall,
   ensureCallHost,
@@ -214,7 +214,7 @@ export async function confirmHostReady(roomId: string, actorId: string, actorRol
 // ─── Join room (user action) ──────────────────────────────────────────────────
 // Only allowed when room is live (host is present).
 
-export async function joinRoom(roomId: string, userId: string) {
+export async function joinRoom(roomId: string, userId: string, deviceId?: string, deviceName?: string) {
   await assertLicenseActiveForRoom(roomId);
   const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId) });
   if (!room) throw Object.assign(new Error('Room not found'), { status: 404 });
@@ -231,6 +231,7 @@ export async function joinRoom(roomId: string, userId: string) {
   // status === 'live' — proceed
 
   await assertRoomAccess(roomId, userId);
+  await assertDeviceAllowedForRoom(roomId, userId, room.hostId, room.createdBy, deviceId, deviceName);
 
   // Record this user joining the active session
   const session = await sessionService.getActiveSession(roomId);
@@ -340,13 +341,29 @@ export async function listMembers(roomId: string) {
 export async function addMember(roomId: string, actorId: string, targetUserId: string, actorRole: UserRole) {
   await assertRoomManager(roomId, actorId, actorRole);
 
+  const addedByAdminId = actorRole === 'admin' ? actorId : null;
+
   const [member] = await db
     .insert(roomMembers)
-    .values({ roomId, userId: targetUserId })
+    .values({ roomId, userId: targetUserId, addedByAdminId })
     .onConflictDoNothing()
     .returning();
 
-  if (!member) throw Object.assign(new Error('User is already a member of this room'), { status: 409 });
+  if (!member) {
+    if (addedByAdminId) {
+      await db
+        .update(roomMembers)
+        .set({ addedByAdminId })
+        .where(
+          and(
+            eq(roomMembers.roomId, roomId),
+            eq(roomMembers.userId, targetUserId),
+            isNull(roomMembers.addedByAdminId),
+          ),
+        );
+    }
+    throw Object.assign(new Error('User is already a member of this room'), { status: 409 });
+  }
 
   // Notify the added user so their room list refreshes
   const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId), columns: { id: true, name: true, status: true } });
@@ -362,15 +379,30 @@ export async function addMember(roomId: string, actorId: string, targetUserId: s
 // ─── Add member to multiple rooms ────────────────────────────────────────────
 
 export async function addMemberToRooms(roomIds: string[], actorId: string, targetUserId: string, actorRole: UserRole) {
+  const addedByAdminId = actorRole === 'admin' ? actorId : null;
+
   const results = await Promise.all(
     roomIds.map(async (roomId) => {
       await assertRoomManager(roomId, actorId, actorRole);
 
       const [member] = await db
         .insert(roomMembers)
-        .values({ roomId, userId: targetUserId })
+        .values({ roomId, userId: targetUserId, addedByAdminId })
         .onConflictDoNothing()
         .returning();
+
+      if (!member && addedByAdminId) {
+        await db
+          .update(roomMembers)
+          .set({ addedByAdminId })
+          .where(
+            and(
+              eq(roomMembers.roomId, roomId),
+              eq(roomMembers.userId, targetUserId),
+              isNull(roomMembers.addedByAdminId),
+            ),
+          );
+      }
 
       if (member) {
         const room = await db.query.rooms.findFirst({ where: eq(rooms.id, roomId), columns: { id: true, name: true, status: true } });
@@ -571,4 +603,124 @@ async function assertRoomAccess(roomId: string, userId: string) {
   if (!membership && !isCreator && !isRoomHost) {
     throw Object.assign(new Error('Not a member of this room'), { status: 403 });
   }
+}
+
+// ─── Per-admin device gating at join-room ────────────────────────────────────
+// The "gating admin" is the admin who allocated this seat to this user:
+//   • For members: roomMembers.addedByAdminId
+//   • For hosts joining their own room: rooms.createdBy (if an admin)
+// If no gating admin is found, the join is not device-gated (creator joining
+// their own room, legacy rows, super_admin-allocated rows).
+
+async function assertDeviceAllowedForRoom(
+  roomId: string,
+  userId: string,
+  roomHostId: string | null,
+  roomCreatedBy: string | null,
+  deviceId?: string,
+  deviceName?: string,
+) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user) { console.log('[device-gate] skip: user not found', { userId }); return; }
+  if (user.isTestAccount) { console.log('[device-gate] skip: test account', { userId }); return; }
+  if (user.role !== 'user' && user.role !== 'host') {
+    console.log('[device-gate] skip: role not gated', { userId, role: user.role });
+    return;
+  }
+
+  let gatingAdminId: string | null = null;
+  let gatingSource: string = 'none';
+
+  const membership = await db.query.roomMembers.findFirst({
+    where: and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId)),
+    columns: { id: true, addedByAdminId: true },
+  });
+
+  if (membership?.addedByAdminId) {
+    gatingAdminId = membership.addedByAdminId;
+    gatingSource = 'membership.addedByAdminId';
+  } else if (roomHostId === userId && roomCreatedBy) {
+    const creator = await db.query.users.findFirst({
+      where: eq(users.id, roomCreatedBy),
+      columns: { role: true },
+    });
+    if (creator?.role === 'admin') {
+      gatingAdminId = roomCreatedBy;
+      gatingSource = 'hostBranch.createdBy';
+    }
+  }
+
+  // Fallback for legacy rows whose addedByAdminId was never backfilled:
+  // if the room's creator is an admin who adopted this user, gate by them
+  // and repair the room_members row so future joins are cheap.
+  if (!gatingAdminId && membership && roomCreatedBy) {
+    const [creatorIsAdoptingAdmin] = await db
+      .select({ adminId: adminUserAdoptions.adminId })
+      .from(adminUserAdoptions)
+      .innerJoin(users, eq(users.id, adminUserAdoptions.adminId))
+      .where(
+        and(
+          eq(adminUserAdoptions.adminId, roomCreatedBy),
+          eq(adminUserAdoptions.userId, userId),
+          eq(users.role, 'admin'),
+        ),
+      )
+      .limit(1);
+    if (creatorIsAdoptingAdmin) {
+      gatingAdminId = creatorIsAdoptingAdmin.adminId;
+      gatingSource = 'fallback.roomCreatedBy';
+      await db
+        .update(roomMembers)
+        .set({ addedByAdminId: gatingAdminId })
+        .where(eq(roomMembers.id, membership.id));
+    }
+  }
+
+  console.log('[device-gate]', {
+    roomId, userId, deviceId, deviceName,
+    gatingAdminId, gatingSource,
+    membershipAddedBy: membership?.addedByAdminId ?? null,
+    roomCreatedBy, roomHostId,
+  });
+
+  if (!gatingAdminId) return;
+
+  if (!deviceId) {
+    throw Object.assign(new Error('Device ID is required'), { status: 400 });
+  }
+
+  const adoption = await db.query.adminUserAdoptions.findFirst({
+    where: and(eq(adminUserAdoptions.adminId, gatingAdminId), eq(adminUserAdoptions.userId, userId)),
+  });
+  if (!adoption) {
+    console.log('[device-gate] skip: no adoption', { gatingAdminId, userId });
+    return;
+  }
+
+  if (!adoption.lockedDeviceId) {
+    await db
+      .update(adminUserAdoptions)
+      .set({ lockedDeviceId: deviceId, lockedDeviceName: deviceName || null })
+      .where(eq(adminUserAdoptions.id, adoption.id));
+    return;
+  }
+
+  if (adoption.lockedDeviceId === deviceId) return;
+
+  if (!adoption.allowDeviceChange) {
+    throw Object.assign(
+      new Error(
+        `You can only join this room from the device approved by your admin (${adoption.lockedDeviceName || 'Unknown'}). Ask your admin to approve this device.`,
+      ),
+      { status: 403, code: 'DEVICE_NOT_ALLOWED_FOR_ROOM' },
+    );
+  }
+
+  await db
+    .update(adminUserAdoptions)
+    .set({ lockedDeviceId: deviceId, lockedDeviceName: deviceName || null, allowDeviceChange: false })
+    .where(eq(adminUserAdoptions.id, adoption.id));
 }

@@ -33,9 +33,6 @@ export const users = pgTable(
     }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
-    lockedDeviceId: varchar('locked_device_id', { length: 255 }),
-    lockedDeviceName: varchar('locked_device_name', { length: 255 }),
-    allowDeviceChange: boolean('allow_device_change').default(false).notNull(),
     isTestAccount: boolean('is_test_account').default(false).notNull(),
     appVersion: varchar('app_version', { length: 50 }),
   },
@@ -55,6 +52,9 @@ export const adminUserAdoptions = pgTable(
     adminId: uuid('admin_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     adoptedAt: timestamp('adopted_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedDeviceId: varchar('locked_device_id', { length: 255 }),
+    lockedDeviceName: varchar('locked_device_name', { length: 255 }),
+    allowDeviceChange: boolean('allow_device_change').default(false).notNull(),
   },
   (t) => [
     unique('uq_admin_user_adoptions').on(t.adminId, t.userId),
@@ -131,12 +131,14 @@ export const roomMembers = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    addedByAdminId: uuid('added_by_admin_id').references(() => users.id, { onDelete: 'set null' }),
     addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     unique('uq_room_members').on(t.roomId, t.userId),
     index('idx_room_members_user').on(t.userId),
     index('idx_room_members_room').on(t.roomId),
+    index('idx_room_members_added_by_admin').on(t.addedByAdminId),
   ],
 );
 

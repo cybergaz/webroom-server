@@ -152,3 +152,25 @@ export const superAdminRoute = new Elysia({ prefix: '/super-admin' })
     },
     { params: t.Object({ adminId: t.String() }) },
   )
+
+  // ─── Global user management ─────────────────────────────────────────────────
+
+  .get('/users', async () => {
+    const users = await adminService.listAllUsersForSuperAdmin()
+    return { users }
+  })
+
+  .delete(
+    '/users/:userId',
+    async ({ params, set }) => {
+      try {
+        await adminService.hardDeleteUser(params.userId)
+        set.status = 204
+        return null
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    { params: t.Object({ userId: t.String() }) },
+  )
