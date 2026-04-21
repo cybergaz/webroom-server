@@ -37,11 +37,14 @@ export async function createGetstreamCall(callId: string, adminUserId: string, n
 /**
  * Ensure a user has the 'host' role on a GetStream call.
  * Used when a host (who didn't originally create the call) starts the room.
+ *
+ * updateCallMembers is authoritative: getOrCreate's `members` param is a
+ * no-op on an already-existing call, so we must await the explicit update
+ * — otherwise members see the host as a regular participant (no 'host'
+ * role), which makes the Flutter client render "Connecting..." forever.
  */
 export async function ensureCallHost(callId: string, hostUserId: string) {
   const call = streamClient.video.call(env.getstream.callType, callId);
-  // getOrCreate is idempotent — creates the call if it doesn't exist yet,
-  // otherwise returns the existing one.
   await call.getOrCreate({
     data: {
       created_by_id: hostUserId,
@@ -51,6 +54,14 @@ export async function ensureCallHost(callId: string, hostUserId: string) {
   await call.updateCallMembers({
     update_members: [{ user_id: hostUserId, role: 'host' }],
   });
+}
+
+/**
+ * Take an audio_room call out of backstage so members can join.
+ */
+export async function goLiveCall(callId: string) {
+  const call = getGetstreamCall(callId);
+  await call.goLive();
 }
 
 export function getGetstreamCall(callId: string) {

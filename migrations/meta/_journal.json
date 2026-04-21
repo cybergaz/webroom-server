@@ -134,6 +134,20 @@
       "when": 1776722152844,
       "tag": "0018_rainy_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776764674076,
+      "tag": "0019_cultured_wong",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1776776694007,
+      "tag": "0020_greedy_stingray",
+      "breakpoints": true
     }
   ]
 }

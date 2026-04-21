@@ -384,6 +384,26 @@ const managedRoomRoutes = new Elysia({ prefix: '/rooms' })
     { params: t.Object({ roomId: t.String() }) },
   )
 
+  // ─── PATCH /rooms/:roomId/content (banners + marquee text) ──────────────────
+  .patch(
+    '/:roomId/content',
+    async ({ params, body, user, set }) => {
+      try {
+        return await roomService.updateRoomContent(params.roomId, user.userId, user.role, body)
+      } catch (err: any) {
+        set.status = err.status ?? 500
+        return { error: err.message }
+      }
+    },
+    {
+      params: t.Object({ roomId: t.String() }),
+      body: t.Object({
+        banners: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 2048 }))),
+        marqueeText: t.Optional(t.Union([t.String({ maxLength: 2048 }), t.Null()])),
+      }),
+    },
+  )
+
 // ─── Export combined ─────────────────────────────────────────────────────────
 
 export const roomsRoute = new Elysia()

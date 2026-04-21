@@ -1,6 +1,7 @@
 import Elysia, { t } from 'elysia';
 import { authPlugin } from '../middleware/auth';
 import * as authService from '../services/auth.service';
+import { generateGetstreamToken } from '../lib/getstream';
 
 function parseDeviceName(ua?: string, deviceHeader?: string): string {
   // Prefer explicit X-Device-Name header (sent by mobile apps — includes model info)
@@ -42,9 +43,11 @@ export const authRoute = new Elysia({ prefix: '/auth' })
   // ─── POST /auth/signup ──────────────────────────────────────────────────────
   .post(
     '/signup',
-    async ({ body, set }) => {
+    async ({ body, set, headers }) => {
       try {
-        const result = await authService.signup(body);
+        const deviceName = parseDeviceName(headers['user-agent'], headers['x-device-name']);
+        const appVersion = headers['x-app-version'] || undefined;
+        const result = await authService.signup(body, deviceName, appVersion);
         set.status = 201;
         return result;
       } catch (err: any) {
@@ -119,8 +122,16 @@ export const authRoute = new Elysia({ prefix: '/auth' })
     },
   )
 
-  // ─── POST /auth/logout (auth required) ─────────────────────────────────────
+  // ─── GET /auth/getstream-token (auth required) ─────────────────────────────
+  // Called by the Flutter SDK's tokenLoader when its token expires. Cheap:
+  // just regenerates a Stream token against the current access-token identity.
   .use(authPlugin)
+  .get(
+    '/getstream-token',
+    ({ user }) => ({ getstreamToken: generateGetstreamToken(user.userId) }),
+  )
+
+  // ─── POST /auth/logout (auth required) ─────────────────────────────────────
   .post(
     '/logout',
     async ({ body, user, set }) => {

@@ -5,7 +5,6 @@ import type { UserRole } from '../lib/jwt';
 import {
   signAccessToken,
   signRefreshToken,
-  signStatusToken,
   verifyRefreshToken,
   refreshTokenExpiresAt,
   accessTokenTtlSeconds,
@@ -34,7 +33,11 @@ async function generateRequestId(): Promise<string> {
 
 // ─── Signup ───────────────────────────────────────────────────────────────────
 
-export async function signup(data: { name: string; phone?: string; email?: string; password: string; }) {
+export async function signup(
+  data: { name: string; phone?: string; email?: string; password: string; },
+  deviceName?: string,
+  appVersion?: string,
+) {
   if (!data.phone && !data.email) {
     throw Object.assign(new Error('Phone or email is required'), { status: 400 });
   }
@@ -63,18 +66,19 @@ export async function signup(data: { name: string; phone?: string; email?: strin
       email: data.email || null,
       passwordHash,
       requestId,
+      status: 'approved',
     })
-    .returning({ id: users.id, status: users.status, requestId: users.requestId });
+    .returning({
+      id: users.id,
+      name: users.name,
+      phone: users.phone,
+      email: users.email,
+      role: users.role,
+      status: users.status,
+      requestId: users.requestId,
+    });
 
-  // Issue a limited-scope token so pending users can connect to WS for status updates
-  const statusToken = await signStatusToken(user.id);
-
-  return {
-    requestId: user.requestId,
-    status: user.status,
-    statusToken,
-    message: 'Account created. Awaiting admin approval.',
-  };
+  return issueTokens(user satisfies UserType, deviceName, appVersion);
 }
 
 // ─── Check Status ─────────────────────────────────────────────────────────────

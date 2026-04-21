@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   uuid,
@@ -27,7 +28,7 @@ export const users = pgTable(
     email: varchar('email', { length: 255 }).unique(),
     passwordHash: varchar('password_hash', { length: 255 }),
     role: userRoleEnum('role').default('user').notNull(),
-    status: userStatusEnum('status').default('pending_approval').notNull(),
+    status: userStatusEnum('status').default('approved').notNull(),
     createdByUserId: uuid('created_by_user_id').references((): any => users.id, {
       onDelete: 'set null',
     }),
@@ -110,6 +111,11 @@ export const rooms = pgTable(
     createdBy: uuid('created_by')
       .references(() => users.id, { onDelete: 'set null' }),
     hostId: uuid('host_id').references(() => users.id, { onDelete: 'set null' }),
+    banners: text('banners')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    marqueeText: text('marquee_text'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

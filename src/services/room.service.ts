@@ -5,6 +5,7 @@ import {
   createGetstreamCall,
   ensureCallHost,
   generateGetstreamToken,
+  goLiveCall,
   grantUserSendAudio,
   muteUserInCall,
   muteAllInCall,
@@ -119,7 +120,44 @@ export async function getRoom(roomId: string, userId: string) {
     getstreamCallType: env.getstream.callType,
     isHost,
     getstreamToken: generateGetstreamToken(userId),
+    banners: room.banners ?? [],
+    marqueeText: room.marqueeText,
     allMembers: all_members.map((m) => ({ member_id: m.id, id: m.user.id, name: m.user.name })),
+  };
+}
+
+// ─── Update room content (banners + marquee text, admin/host action) ─────────
+
+export async function updateRoomContent(
+  roomId: string,
+  actorId: string,
+  actorRole: UserRole,
+  input: { banners?: string[]; marqueeText?: string | null },
+) {
+  await assertRoomManager(roomId, actorId, actorRole);
+
+  const patch: Record<string, unknown> = {};
+  if (input.banners !== undefined) patch.banners = input.banners;
+  if (input.marqueeText !== undefined) patch.marqueeText = input.marqueeText;
+
+  if (Object.keys(patch).length === 0) {
+    throw Object.assign(new Error('No fields to update'), { status: 400 });
+  }
+
+  const [updated] = await db
+    .update(rooms)
+    .set(patch)
+    .where(eq(rooms.id, roomId))
+    .returning({
+      id: rooms.id,
+      banners: rooms.banners,
+      marqueeText: rooms.marqueeText,
+    });
+
+  return {
+    roomId: updated.id,
+    banners: updated.banners ?? [],
+    marqueeText: updated.marqueeText,
   };
 }
 
@@ -148,21 +186,24 @@ export async function startRoom(roomId: string, actorId: string, actorRole: User
     throw Object.assign(new Error('Room has been permanently ended'), { status: 410 });
   }
 
-  await db.update(rooms).set({ status: 'live' }).where(eq(rooms.id, roomId));
+  // Run all independent start-up work in parallel. `ensureCallHost` makes
+  // getOrCreate on the GetStream side (needed before the host can join);
+  // the DB flip and session creation are independent.
+  const [, session] = await Promise.all([
+    db.update(rooms).set({ status: 'live' }).where(eq(rooms.id, roomId)),
+    sessionService.getOrCreateSession(roomId),
+    ensureCallHost(room.getstreamCallId, actorId),
+  ]);
+
+  // Record the host as the first participant (fire-and-forget; not on critical path)
+  sessionService.recordParticipantJoin(session.id, actorId).catch((err) => {
+    console.error('[Room] recordParticipantJoin (host) failed:', err?.message ?? err);
+  });
 
   // NOTE: We do NOT broadcast room.status_changed here.
-  // The host client calls /rooms/:roomId/host-ready after goLive() succeeds,
-  // which then broadcasts to members. This prevents the race condition where
+  // The host client calls /rooms/:roomId/host-ready after join() succeeds,
+  // which then goLives + broadcasts to members. This prevents the race where
   // a fast user joins the GetStream call before the host is actually ready.
-
-  const session = await sessionService.getOrCreateSession(roomId);
-
-  // Ensure the current host has the 'host' role on the GetStream call,
-  // even if they weren't the original creator (e.g. admin reassigned hosts).
-  await ensureCallHost(room.getstreamCallId, actorId);
-
-  // Record the host as the first participant
-  await sessionService.recordParticipantJoin(session.id, actorId);
 
   return {
     roomId: room.id,
@@ -188,27 +229,27 @@ export async function confirmHostReady(roomId: string, actorId: string, actorRol
     throw Object.assign(new Error('Room is not live'), { status: 409 });
   }
 
-  // Start recording the call now that the host is live
-  console.log('[Recording] Starting recording for call', room.getstreamCallId);
-  await startCallRecording(room.getstreamCallId).then(() => {
-    console.log('[Recording] Recording started for call', room.getstreamCallId);
-  }).catch((err) => {
-    console.error('[Recording] Failed to start recording for call', room.getstreamCallId, err?.message ?? err);
+  // Take the call out of backstage first (fast), then fire recording,
+  // transcription, and the member broadcast in parallel. Recording and
+  // transcription both require the call to be live, so goLive must land
+  // before them.
+  const callId = room.getstreamCallId;
+  await goLiveCall(callId).catch((err) => {
+    console.error('[GoLive] failed for call', callId, err?.message ?? err);
   });
-
-  // Start transcription alongside recording
-  console.log('[Transcription] Starting transcription for call', room.getstreamCallId);
-  await startCallTranscription(room.getstreamCallId).then(() => {
-    console.log('[Transcription] Transcription started for call', room.getstreamCallId);
-  }).catch((err) => {
-    console.error('[Transcription] Failed to start transcription for call', room.getstreamCallId, err?.message ?? err);
-  });
-
-  await sendToRoomMembers(roomId, 'room.status_changed', {
-    roomId,
-    roomName: room.name,
-    status: 'live',
-  });
+  await Promise.all([
+    startCallRecording(callId).catch((err) => {
+      console.error('[Recording] failed for call', callId, err?.message ?? err);
+    }),
+    startCallTranscription(callId).catch((err) => {
+      console.error('[Transcription] failed for call', callId, err?.message ?? err);
+    }),
+    sendToRoomMembers(roomId, 'room.status_changed', {
+      roomId,
+      roomName: room.name,
+      status: 'live',
+    }),
+  ]);
 }
 
 // ─── Join room (user action) ──────────────────────────────────────────────────
@@ -233,18 +274,22 @@ export async function joinRoom(roomId: string, userId: string, deviceId?: string
   await assertRoomAccess(roomId, userId);
   await assertDeviceAllowedForRoom(roomId, userId, room.hostId, room.createdBy, deviceId, deviceName);
 
-  // Record this user joining the active session
-  const session = await sessionService.getActiveSession(roomId);
-  if (session) await sessionService.recordParticipantJoin(session.id, userId);
+  // Run the session lookup and the (slow) send-audio grant in parallel —
+  // the user doesn't actually need either to be done before the SDK join
+  // starts talking to the SFU, but we want both kicked off before we reply
+  // so they don't block the subsequent participant insert / PTT.
+  const [session] = await Promise.all([
+    sessionService.getActiveSession(roomId),
+    grantUserSendAudio(room.getstreamCallId, userId).catch((err) => {
+      console.error(`[Room] Failed to pre-grant send-audio for user ${userId} on call ${room.getstreamCallId}:`, err?.message ?? err);
+    }),
+  ]);
 
-  // Pre-grant send-audio permission server-side so the user can PTT
-  // immediately after joining. This is the authoritative grant — the
-  // client-side grant from the host is kept as a fallback but this
-  // eliminates the race condition where the host's grant fires too late
-  // or silently fails.
-  await grantUserSendAudio(room.getstreamCallId, userId).catch((err) => {
-    console.error(`[Room] Failed to pre-grant send-audio for user ${userId} on call ${room.getstreamCallId}:`, err?.message ?? err);
-  });
+  if (session) {
+    sessionService.recordParticipantJoin(session.id, userId).catch((err) => {
+      console.error(`[Room] recordParticipantJoin failed for user ${userId}:`, err?.message ?? err);
+    });
+  }
 
   return {
     sessionId: session?.id,
