@@ -1,4 +1,4 @@
-import { uploadRecording, getPresignedUrl } from '../lib/s3';
+import { uploadRecording, getObjectBytes } from '../lib/s3';
 
 const ALLOWED_IMAGE_MIME = new Set([
   'image/jpeg',
@@ -15,9 +15,13 @@ const MIME_TO_EXT: Record<string, string> = {
 
 const MAX_BANNER_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// 7 days — banner URLs are regenerated each time the room is fetched, so the
-// TTL just needs to outlive a typical session.
-const BANNER_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+};
 
 // Uploads a banner image to S3 under `banners/<uuid>.<ext>` and returns the
 // object key so the caller can build the public asset URL.
@@ -43,12 +47,18 @@ export async function uploadBannerImage(file: File) {
   return { key };
 }
 
-// Returns a time-limited presigned URL to a banner object. Used by the public
-// /assets/banners/:filename redirect so the S3 bucket itself can stay private.
-export async function getBannerPresignedUrl(filename: string) {
+// Proxies a banner image from S3 back to the caller. We serve the bytes
+// ourselves (instead of 302-redirecting to a presigned URL) so browser
+// consumers get our CORS headers — S3 presigned URLs don't include them.
+export async function getBannerBytes(filename: string) {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '');
   if (!safeName) {
     throw Object.assign(new Error('Invalid filename'), { status: 400 });
   }
-  return getPresignedUrl(`banners/${safeName}`, BANNER_URL_TTL_SECONDS);
+  const { bytes, contentType } = await getObjectBytes(`banners/${safeName}`);
+  const ext = safeName.split('.').pop()?.toLowerCase() ?? '';
+  return {
+    bytes,
+    contentType: contentType ?? MIME_BY_EXT[ext] ?? 'application/octet-stream',
+  };
 }

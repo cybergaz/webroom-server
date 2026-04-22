@@ -50,3 +50,20 @@ export async function deleteRecording(key: string): Promise<void> {
     new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: key }),
   );
 }
+
+// Returns the object body as a Uint8Array along with the content type, so
+// routes can proxy bytes to the browser with their own CORS headers instead
+// of redirecting to an S3 presigned URL (which lacks Access-Control-Allow-Origin).
+export async function getObjectBytes(key: string): Promise<{
+  bytes: Uint8Array;
+  contentType: string | undefined;
+}> {
+  const res = await s3.send(
+    new GetObjectCommand({ Bucket: env.s3.bucket, Key: key }),
+  );
+  if (!res.Body) {
+    throw Object.assign(new Error('Object not found'), { status: 404 });
+  }
+  const bytes = await res.Body.transformToByteArray();
+  return { bytes, contentType: res.ContentType };
+}
