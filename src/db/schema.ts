@@ -256,29 +256,6 @@ export const pttRecordings = pgTable(
   ],
 );
 
-// ─── Session Transcriptions ──────────────────────────────────────────────────
-
-export const sessionTranscriptions = pgTable(
-  'session_transcriptions',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-      .notNull()
-      .references(() => roomSessions.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    text: text('text').notNull(),
-    startTime: timestamp('start_time', { withTimezone: true }).notNull(),
-    endTime: timestamp('end_time', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [
-    index('idx_session_transcriptions_session').on(t.sessionId),
-    index('idx_session_transcriptions_user').on(t.userId),
-  ],
-);
-
 export type User = typeof users.$inferSelect;
 export type Room = typeof rooms.$inferSelect;
 export type RoomMember = typeof roomMembers.$inferSelect;
@@ -287,4 +264,3 @@ export type RoomSession = typeof roomSessions.$inferSelect;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type SpeakingEvent = typeof speakingEvents.$inferSelect;
 export type PttRecording = typeof pttRecordings.$inferSelect;
-export type SessionTranscription = typeof sessionTranscriptions.$inferSelect;

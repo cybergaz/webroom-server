@@ -8,7 +8,6 @@ import {
   sessionParticipants,
   speakingEvents,
   pttRecordings,
-  sessionTranscriptions,
 } from './schema'
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -19,7 +18,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessionParticipations: many(sessionParticipants),
   speakingEvents: many(speakingEvents),
   pttRecordings: many(pttRecordings),
-  transcriptions: many(sessionTranscriptions),
 }))
 
 export const roomsRelations = relations(rooms, ({ one, many }) => ({
@@ -44,7 +42,6 @@ export const roomSessionsRelations = relations(roomSessions, ({ one, many }) => 
   participants: many(sessionParticipants),
   speakingEvents: many(speakingEvents),
   pttRecordings: many(pttRecordings),
-  transcriptions: many(sessionTranscriptions),
 }))
 
 export const sessionParticipantsRelations = relations(sessionParticipants, ({ one }) => ({
@@ -67,12 +64,4 @@ export const pttRecordingsRelations = relations(pttRecordings, ({ one }) => ({
   room: one(rooms, { fields: [pttRecordings.roomId], references: [rooms.id] }),
   session: one(roomSessions, { fields: [pttRecordings.sessionId], references: [roomSessions.id] }),
   user: one(users, { fields: [pttRecordings.userId], references: [users.id] }),
-}))
-
-export const sessionTranscriptionsRelations = relations(sessionTranscriptions, ({ one }) => ({
-  session: one(roomSessions, {
-    fields: [sessionTranscriptions.sessionId],
-    references: [roomSessions.id],
-  }),
-  user: one(users, { fields: [sessionTranscriptions.userId], references: [users.id] }),
 }))

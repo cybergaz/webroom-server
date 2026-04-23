@@ -14,8 +14,6 @@ import {
   startCallRecording,
   stopCallRecording,
   listCallRecordings,
-  startCallTranscription,
-  stopCallTranscription,
 } from '../lib/getstream';
 import { env } from '../config/env';
 import type { UserRole } from '../lib/jwt';
@@ -229,10 +227,9 @@ export async function confirmHostReady(roomId: string, actorId: string, actorRol
     throw Object.assign(new Error('Room is not live'), { status: 409 });
   }
 
-  // Take the call out of backstage first (fast), then fire recording,
-  // transcription, and the member broadcast in parallel. Recording and
-  // transcription both require the call to be live, so goLive must land
-  // before them.
+  // Take the call out of backstage first (fast), then fire recording and
+  // the member broadcast in parallel. Recording requires the call to be
+  // live, so goLive must land before it.
   const callId = room.getstreamCallId;
   await goLiveCall(callId).catch((err) => {
     console.error('[GoLive] failed for call', callId, err?.message ?? err);
@@ -240,9 +237,6 @@ export async function confirmHostReady(roomId: string, actorId: string, actorRol
   await Promise.all([
     startCallRecording(callId).catch((err) => {
       console.error('[Recording] failed for call', callId, err?.message ?? err);
-    }),
-    startCallTranscription(callId).catch((err) => {
-      console.error('[Transcription] failed for call', callId, err?.message ?? err);
     }),
     sendToRoomMembers(roomId, 'room.status_changed', {
       roomId,
@@ -318,7 +312,6 @@ export async function leaveRoom(roomId: string, userId: string) {
 
   // Host left — shut down the session
   await stopCallRecording(room.getstreamCallId).catch(() => { });
-  await stopCallTranscription(room.getstreamCallId).catch(() => { });
 
   const members = await db.query.roomMembers.findMany({ where: eq(roomMembers.roomId, roomId) });
   await Promise.allSettled(members.map((m) => kickUserFromCall(room.getstreamCallId, m.userId)));
@@ -327,21 +320,6 @@ export async function leaveRoom(roomId: string, userId: string) {
 
   const activeSession = await sessionService.getActiveSession(roomId);
   if (activeSession) await sessionService.endSession(activeSession.id);
-
-  // Fetch and store transcription after a delay (GetStream needs time to finalize)
-  if (activeSession) {
-    const capturedSessionId = activeSession.id;
-    const capturedCallId = room.getstreamCallId;
-    setTimeout(async () => {
-      try {
-        const { fetchAndStoreTranscription } = await import('./transcription.service');
-        await fetchAndStoreTranscription(capturedSessionId, capturedCallId);
-        console.log('[Transcription] Stored transcription for session', capturedSessionId);
-      } catch (err: any) {
-        console.error('[Transcription] Failed to fetch/store:', err?.message ?? err);
-      }
-    }, 15_000);
-  }
 
   await db.update(rooms).set({ status: 'active' }).where(eq(rooms.id, roomId));
 
@@ -554,9 +532,8 @@ export async function endRoom(roomId: string, actorId: string, actorRole: UserRo
     throw Object.assign(new Error('Room is not live'), { status: 409 });
   }
 
-  // Stop recording and transcription before ending the call
+  // Stop recording before ending the call
   await stopCallRecording(room.getstreamCallId).catch(() => { });
-  await stopCallTranscription(room.getstreamCallId).catch(() => { });
 
   const members = await db.query.roomMembers.findMany({ where: eq(roomMembers.roomId, roomId) });
   // console.log('Ending room, kicking members:', members.map((m) => m.userId));
@@ -566,21 +543,6 @@ export async function endRoom(roomId: string, actorId: string, actorRole: UserRo
 
   const activeSession = await sessionService.getActiveSession(roomId);
   if (activeSession) await sessionService.endSession(activeSession.id);
-
-  // Fetch and store transcription after a delay (GetStream needs time to finalize)
-  if (activeSession) {
-    const capturedSessionId = activeSession.id;
-    const capturedCallId = room.getstreamCallId;
-    setTimeout(async () => {
-      try {
-        const { fetchAndStoreTranscription } = await import('./transcription.service');
-        await fetchAndStoreTranscription(capturedSessionId, capturedCallId);
-        console.log('[Transcription] Stored transcription for session', capturedSessionId);
-      } catch (err: any) {
-        console.error('[Transcription] Failed to fetch/store:', err?.message ?? err);
-      }
-    }, 15_000);
-  }
 
   // send ws message for room end to all members in the room
   // console.log('Notifying members of room end:');
