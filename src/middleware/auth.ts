@@ -74,6 +74,24 @@ export const adminPlugin = new Elysia({ name: 'admin' }).derive(
 );
 
 /**
+ * Host guard — role must be 'host'.
+ */
+export const hostPlugin = new Elysia({ name: 'host' }).derive(
+  { as: 'scoped' },
+  async ({ headers }) => {
+    const payload = await verifyAndCheck(headers);
+    if (payload.role !== 'host') throw err(403, 'Host access required');
+    return {
+      user: {
+        userId: payload.sub,
+        role: payload.role as 'host',
+        jti: payload.jti,
+      },
+    };
+  },
+);
+
+/**
  * Host-or-admin guard — role must be 'host', 'admin', or 'super_admin'.
  * Service layer enforces room-level ownership on top of this.
  */

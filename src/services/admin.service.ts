@@ -518,6 +518,39 @@ export async function updateUser(userId: string, adminId: string, data: { name?:
   return updated;
 }
 
+/**
+ * Host-facing update — same scope check as updateUser but supports password
+ * reset. Kept separate so the admin surface (name/email only) is unchanged.
+ */
+export async function updateUserByHost(
+  userId: string,
+  adminId: string,
+  data: { name?: string; password?: string; },
+) {
+  await assertAdminLicenseActive(adminId);
+  const [user] = await db.select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.role, 'user'), isAdoptedBy(adminId)))
+    .limit(1);
+  if (!user) throw err(404, 'User not found');
+
+  const updateData: Record<string, unknown> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.password) updateData.passwordHash = await Bun.password.hash(data.password);
+
+  if (Object.keys(updateData).length === 0) {
+    return { id: userId };
+  }
+
+  const [updated] = await db
+    .update(users)
+    .set(updateData)
+    .where(eq(users.id, userId))
+    .returning({ id: users.id, name: users.name });
+
+  return updated;
+}
+
 export async function activateUser(userId: string, adminId: string) {
   await assertAdminLicenseActive(adminId);
   const [user] = await db.select({ id: users.id })

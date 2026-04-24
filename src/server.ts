@@ -6,6 +6,7 @@ import { authRoute } from './routes/auth';
 import { roomsRoute } from './routes/rooms';
 import { superAdminRoute } from './routes/super-admin';
 import { adminRoute } from './routes/admin';
+import { hostRoute } from './routes/host';
 import { wsRoute } from './routes/ws';
 import { sportsRoute } from './routes/sports';
 import { uploadsRoute } from './routes/uploads';
@@ -46,6 +47,7 @@ async function bootstrap() {
         .use(roomsRoute)
         .use(superAdminRoute)
         .use(adminRoute)
+        .use(hostRoute)
         .use(wsRoute)
         .use(sportsRoute)
         .use(uploadsRoute)
